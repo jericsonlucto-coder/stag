@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
 // Your Pusher credentials
-const PUSHER_APP_ID = "2159204"; // You need to add your actual App ID
-const PUSHER_KEY = "bc4bbe143420c20c0e9d";
-const PUSHER_SECRET = "bbd18207d17c2f39529e";
-const PUSHER_CLUSTER = "ap1";
+const PUSHER_APP_ID = process.env.PUSHER_APP_ID || "2159204";
+const PUSHER_KEY = process.env.PUSHER_KEY || "bc4bbe143420c20c0e9d";
+const PUSHER_SECRET = process.env.PUSHER_SECRET || "bbd18207d17c2f39529e";
+const PUSHER_CLUSTER = process.env.PUSHER_CLUSTER || "ap1";
 
 async function getSignature(secret: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -36,6 +36,30 @@ export async function POST(request: Request) {
   try {
     const message = await request.json();
     
+    // Save to Firebase using REST API (since Cloudflare Workers don't support Firebase Admin)
+    const firebaseUrl = `https://firestore.googleapis.com/v1/projects/${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}/databases/(default)/documents/messages`;
+    
+    const firebaseResponse = await fetch(firebaseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.FIREBASE_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({
+        fields: {
+          text: { stringValue: message.text },
+          username: { stringValue: message.username },
+          timestamp: { integerValue: message.timestamp },
+          userId: { stringValue: message.userId },
+          createdAt: { stringValue: new Date().toISOString() }
+        }
+      }),
+    });
+    
+    if (!firebaseResponse.ok) {
+      console.error("Firebase save error:", await firebaseResponse.text());
+    }
+    
     // Create the payload for Pusher HTTP API
     const payload = {
       name: "new-message",
@@ -50,7 +74,6 @@ export async function POST(request: Request) {
     const stringToSign = `POST\n${path}\n${queryString}`;
     const signature = await getSignature(PUSHER_SECRET, stringToSign);
     
-    // Make request to Pusher HTTP API
     const response = await fetch(`https://api-${PUSHER_CLUSTER}.pusher.com${path}?${queryString}&auth_signature=${signature}`, {
       method: "POST",
       headers: {
