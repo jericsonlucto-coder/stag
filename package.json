@@ -1,5 +1,5 @@
 {
-	"name": "stag",
+	"name": "chatto",
 	"description": "Build a full-stack web application with Next.js.",
 	"cloudflare": {
 		"label": "Next.js Framework Starter",
@@ -12,9 +12,14 @@
 		"publish": true
 	},
 	"dependencies": {
+		"chess.js": "^1.0.0-beta.6",
+		"pusher-js": "^8.3.0",
+		"react-chessboard": "^4.7.2",
 		"@opennextjs/cloudflare": "1.14.0",
 		"next": "16.0.7",
 		"react": "19.2.1",
+		"emoji-picker-react": "^4.11.0",
+    	"react-icons": "^5.0.0",
 		"react-dom": "19.2.1"
 	},
 	"devDependencies": {
