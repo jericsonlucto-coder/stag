@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import Pusher from "pusher-js";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, query, orderBy, onSnapshot } from "firebase/firestore";
 
 interface Message {
   id: string;
@@ -17,40 +19,85 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 };
 
+// Firebase configuration - Add these in Cloudflare Dashboard
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+};
+
+// Initialize Firebase
+let app: any;
+let db: any;
+if (typeof window !== 'undefined') {
+  app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
   const [username, setUsername] = useState("");
   const [isJoined, setIsJoined] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
 
-  // Initialize Pusher with your credentials
+  // Load messages from Firebase
+  useEffect(() => {
+    if (!isJoined || !db) return;
+
+    setIsLoading(true);
+    
+    const q = query(
+      collection(db, "messages"),
+      orderBy("timestamp", "asc")
+    );
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const loadedMessages: Message[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        loadedMessages.push({
+          id: doc.id,
+          text: data.text,
+          username: data.username,
+          timestamp: data.timestamp,
+          userId: data.userId,
+        });
+      });
+      setMessages(loadedMessages);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error loading messages:", error);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [isJoined]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Initialize Pusher
   useEffect(() => {
     if (!isJoined) return;
 
-    // Use your actual Pusher credentials
-    const pusher = new Pusher("bc4bbe143420c20c0e9d", {
+    const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY || "bc4bbe143420c20c0e9d", {
       cluster: "ap1",
-      authEndpoint: "/api/pusher-auth", // Your auth endpoint
+      authEndpoint: "/api/pusher/auth",
     });
 
     const channel = pusher.subscribe("private-chat-channel");
     
     channel.bind("new-message", (data: Message) => {
       console.log("New message received:", data);
-      setMessages((prev) => [...prev, data]);
     });
-
-    // Load existing messages from localStorage
-    const savedMessages = localStorage.getItem("chat-messages");
-    if (savedMessages) {
-      try {
-        setMessages(JSON.parse(savedMessages));
-      } catch (e) {
-        console.error("Error loading messages:", e);
-      }
-    }
 
     return () => {
       channel.unbind_all();
@@ -58,18 +105,6 @@ export default function Home() {
       pusher.disconnect();
     };
   }, [isJoined]);
-
-  // Save messages to localStorage
-  useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem("chat-messages", JSON.stringify(messages));
-    }
-  }, [messages]);
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,7 +200,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -185,12 +219,15 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Chat Container */}
       <div className="max-w-4xl mx-auto p-4">
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          {/* Messages Area */}
           <div className="h-[500px] overflow-y-auto p-4 space-y-3">
-            {messages.length === 0 && (
+            {isLoading && (
+              <div className="text-center text-gray-500 mt-8">
+                Loading messages...
+              </div>
+            )}
+            {!isLoading && messages.length === 0 && (
               <div className="text-center text-gray-500 mt-8">
                 No messages yet. Start the conversation!
               </div>
@@ -226,7 +263,6 @@ export default function Home() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input Area */}
           <form onSubmit={sendMessage} className="border-t p-4">
             <div className="flex gap-2">
               <input
