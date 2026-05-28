@@ -33,7 +33,7 @@ export default function Home() {
     const loadMessages = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch('https://your-project-default-rtdb.firebaseio.com/messages.json');
+        const response = await fetch('https://chatto-659ec-default-rtdb.firebaseio.com/');
         const data = await response.json();
         
         const loadedMessages: Message[] = [];
