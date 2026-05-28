@@ -154,7 +154,7 @@ const api = {
       method: "POST",
       body: formData,
     });
-    const data = await res.json();
+    const data = await res.json() as { url: string };
     return { url: data.url };
   },
 };
