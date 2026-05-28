@@ -11,6 +11,10 @@ interface Message {
   reactions?: any[];
 }
 
+interface FirebaseResponse {
+  name: string;
+}
+
 // Your Pusher credentials
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
@@ -75,7 +79,7 @@ export async function POST(request: Request) {
       body: JSON.stringify(messageData),
     });
     
-    const firebaseResult = await firebaseResponse.json();
+    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
     console.log("Firebase save result:", firebaseResult);
     
     if (!firebaseResponse.ok) {
