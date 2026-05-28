@@ -413,30 +413,30 @@ export default function Home() {
 
   // ── Data Fetching ─────────────────────────────────────────
 
-  const loadMessages = useCallback(async () => {
-    try {
-      const res = await api.getMessages();
-      const data: Record<string, FirebaseMessage> = await res.json();
-      const loaded: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
-        .map(([key, msg]) => ({
-          id: key,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered",
-          reactions: sanitizeReactions(msg.reactions || []),
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
-
-      setMessages(loaded);
-    } catch (err) {
-      console.error("Error loading messages:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    const loadMessages = useCallback(async () => {
+      try {
+        const res = await api.getMessages();
+        const data: Record<string, FirebaseMessage> = await res.json();
+        const loaded: Message[] = Object.entries(data || {})
+          .filter(([, msg]) => msg?.text && msg?.username)
+          .map(([key, msg]) => ({
+            id: key,
+            text: msg.text,
+            username: msg.username,
+            timestamp: msg.timestamp || Date.now(),
+            userId: msg.userId || "",
+            status: "delivered" as MessageStatus,  // 👈 add this cast
+            reactions: sanitizeReactions(msg.reactions || []),
+          }))
+          .sort((a, b) => a.timestamp - b.timestamp);
+    
+        setMessages(loaded);
+      } catch (err) {
+        console.error("Error loading messages:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }, []);
 
   const loadOnlineUsers = useCallback(async () => {
     try {
