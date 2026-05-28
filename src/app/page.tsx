@@ -1,7 +1,12 @@
 "use client";
+
 import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
+
+// ============================================================
+// TYPES & INTERFACES
+// ============================================================
 
 type MessageStatus = "sending" | "sent" | "delivered" | "error";
 type ReactionType = "👍" | "❤️" | "😂" | "😮" | "😢" | "🙏";
@@ -39,12 +44,346 @@ interface FirebaseMessage {
   reactions?: Reaction[];
 }
 
-const generateId = () => {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-};
+// ============================================================
+// CONSTANTS
+// ============================================================
 
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 const REACTIONS: ReactionType[] = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const HEARTBEAT_INTERVAL = 30000;
+const USER_ACTIVE_THRESHOLD = 60000;
+const USER_REFRESH_INTERVAL = 5000;
+const STATUS_CLEAR_DELAY = 2000;
+
+// ============================================================
+// UTILITIES
+// ============================================================
+
+const generateId = () =>
+  Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+
+const formatTime = (timestamp: number) =>
+  new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+const sanitizeReactions = (reactions: any[]): Reaction[] =>
+  (reactions || []).filter((r) => r !== null && r !== undefined);
+
+const getReactionCounts = (reactions?: Reaction[]): Record<string, number> => {
+  if (!reactions) return {};
+  return sanitizeReactions(reactions).reduce(
+    (acc: Record<string, number>, r) => {
+      acc[r.type] = (acc[r.type] || 0) + 1;
+      return acc;
+    },
+    {}
+  );
+};
+
+const getUniqueReactions = (reactions?: Reaction[]): Reaction[] => {
+  if (!reactions) return [];
+  const unique = new Map<ReactionType, Reaction>();
+  sanitizeReactions(reactions).forEach((r) => {
+    if (!unique.has(r.type)) unique.set(r.type, r);
+  });
+  return Array.from(unique.values());
+};
+
+// ============================================================
+// API HELPERS
+// ============================================================
+
+const api = {
+  getMessages: () => fetch(`${FIREBASE_DB_URL}/messages.json`),
+  getUsers: () => fetch(`${FIREBASE_DB_URL}/users.json`),
+
+  putUser: (userId: string, data: object) =>
+    fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  patchUser: (userId: string, data: object) =>
+    fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  deleteUser: (userId: string) =>
+    fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, { method: "DELETE" }),
+
+  putReactions: (messageId: string, reactions: Reaction[]) =>
+    fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reactions),
+    }),
+
+  sendMessage: (message: Message) =>
+    fetch("/api/send-message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message),
+    }),
+
+  sendReaction: (messageId: string, reaction: Reaction | null) =>
+    fetch("/api/send-reaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId, reaction }),
+    }),
+};
+
+// ============================================================
+// SUB-COMPONENTS
+// ============================================================
+
+function StatusIcon({ status }: { status: MessageStatus }) {
+  const configs = {
+    sending: {
+      color: "text-gray-500",
+      label: "Sending...",
+      icon: (
+        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+            fill="none"
+          />
+          <path
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          />
+        </svg>
+      ),
+    },
+    sent: {
+      color: "text-blue-500",
+      label: "Sent",
+      icon: (
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      ),
+    },
+    delivered: {
+      color: "text-green-500",
+      label: "Delivered",
+      icon: (
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+    error: {
+      color: "text-red-500",
+      label: "Failed",
+      icon: (
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+  };
+
+  const { color, label, icon } = configs[status];
+  return (
+    <div className={`flex items-center gap-1 text-xs ${color}`}>
+      {icon}
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function ReactionPicker({
+  reactions,
+  userId,
+  onReact,
+}: {
+  reactions?: Reaction[];
+  userId: string;
+  onReact: (type: ReactionType) => void;
+}) {
+  return (
+    <div className="bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20">
+      {REACTIONS.map((reaction) => {
+        const isActive = sanitizeReactions(reactions || []).some(
+          (r) => r.userId === userId && r.type === reaction
+        );
+        return (
+          <button
+            key={reaction}
+            onClick={() => onReact(reaction)}
+            className={`hover:bg-gray-100 p-2 rounded transition-colors text-xl ${
+              isActive ? "bg-blue-100" : ""
+            }`}
+          >
+            {reaction}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReactionDisplay({
+  reactions,
+  userId,
+}: {
+  reactions?: Reaction[];
+  userId: string;
+}) {
+  const counts = getReactionCounts(reactions);
+  const unique = getUniqueReactions(reactions);
+
+  if (unique.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {unique.map((reaction, idx) => {
+        const isActive = sanitizeReactions(reactions || []).some(
+          (r) => r.userId === userId && r.type === reaction.type
+        );
+        return (
+          <div
+            key={idx}
+            className={`inline-flex items-center gap-1 bg-white border rounded-full px-2 py-0.5 text-sm shadow-sm ${
+              isActive
+                ? "border-blue-500 bg-blue-50"
+                : "border-gray-200"
+            }`}
+          >
+            <span>{reaction.type}</span>
+            <span className="text-xs text-gray-600">{counts[reaction.type]}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MessageBubble({
+  message,
+  currentUserId,
+  isHovered,
+  onMouseEnter,
+  onMouseLeave,
+  onReact,
+}: {
+  message: Message;
+  currentUserId: string;
+  isHovered: boolean;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+  onReact: (type: ReactionType) => void;
+}) {
+  const isOwn = message.userId === currentUserId;
+  const uniqueReactions = getUniqueReactions(message.reactions);
+
+  return (
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-8`}>
+      <div
+        className="relative max-w-[70%]"
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        {/* Reaction Picker */}
+        {isHovered && (
+          <div
+            className={`absolute -top-12 ${isOwn ? "right-0" : "left-0"}`}
+          >
+            <ReactionPicker
+              reactions={message.reactions}
+              userId={currentUserId}
+              onReact={onReact}
+            />
+          </div>
+        )}
+
+        {/* Bubble */}
+        <div
+          className={`rounded-lg p-3 ${
+            isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-semibold text-sm">{message.username}</span>
+            <span className="text-xs opacity-75">
+              {formatTime(message.timestamp)}
+            </span>
+          </div>
+          <p className="break-words">{message.text}</p>
+          {isOwn && message.status && (
+            <div className="mt-1 flex justify-end">
+              <StatusIcon status={message.status} />
+            </div>
+          )}
+        </div>
+
+        {/* Reactions */}
+        {uniqueReactions.length > 0 && (
+          <div className={`absolute -bottom-6 ${isOwn ? "right-0" : "left-0"}`}>
+            <ReactionDisplay
+              reactions={message.reactions}
+              userId={currentUserId}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UserListItem({
+  user,
+  isCurrentUser,
+}: {
+  user: User;
+  isCurrentUser: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors border-b ${
+        isCurrentUser ? "bg-blue-50" : ""
+      }`}
+    >
+      <div className="relative">
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
+            isCurrentUser
+              ? "bg-gradient-to-br from-green-400 to-green-600"
+              : "bg-gradient-to-br from-blue-400 to-indigo-500"
+          }`}
+        >
+          {user.username?.charAt(0).toUpperCase()}
+        </div>
+        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-medium text-gray-800">
+          {user.username}
+          {isCurrentUser && (
+            <span className="ml-2 text-xs text-green-600">(You)</span>
+          )}
+        </p>
+        <p className="text-xs text-gray-500">Active now</p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -54,12 +393,14 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
-  // Check for saved username on component mount
+  // ── Persistence ──────────────────────────────────────────
+
   useEffect(() => {
     const savedUsername = localStorage.getItem("chat-username");
     const savedUserId = localStorage.getItem("chat-userId");
@@ -70,122 +411,100 @@ export default function Home() {
     }
   }, []);
 
-  const updateLastActive = useCallback(async () => {
-    if (!isJoined) return;
-    try {
-      await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lastActive: Date.now() }),
-      });
-    } catch (error) {
-      console.error("Error updating last active:", error);
-    }
-  }, [isJoined]);
-
-  const loadOnlineUsers = useCallback(async () => {
-    try {
-      const response = await fetch(`${FIREBASE_DB_URL}/users.json`);
-      const data: Record<string, any> = await response.json();
-      const now = Date.now();
-      const activeUsers: User[] = [];
-
-      if (data) {
-        Object.keys(data).forEach((key) => {
-          const user = data[key];
-          if (user && user.username && user.lastActive) {
-            const timeSinceLastActive = now - user.lastActive;
-            if (timeSinceLastActive < 60000) {
-              activeUsers.push({
-                id: key,
-                username: user.username,
-                joinedAt: user.joinedAt || now,
-                lastActive: user.lastActive,
-              });
-            } else {
-              fetch(`${FIREBASE_DB_URL}/users/${key}.json`, {
-                method: "DELETE",
-              }).catch(console.error);
-            }
-          }
-        });
-      }
-
-      activeUsers.sort((a, b) => {
-        if (a.id === userIdRef.current) return -1;
-        if (b.id === userIdRef.current) return 1;
-        return (a.username || "").localeCompare(b.username || "");
-      });
-
-      setOnlineUsers(activeUsers);
-    } catch (error) {
-      console.error("Error loading online users:", error);
-    }
-  }, []);
+  // ── Data Fetching ─────────────────────────────────────────
 
   const loadMessages = useCallback(async () => {
     try {
-      const response = await fetch(`${FIREBASE_DB_URL}/messages.json`);
-      const data: Record<string, FirebaseMessage> = await response.json();
-      const loadedMessages: Message[] = [];
+      const res = await api.getMessages();
+      const data: Record<string, FirebaseMessage> = await res.json();
+      const loaded: Message[] = Object.entries(data || {})
+        .filter(([, msg]) => msg?.text && msg?.username)
+        .map(([key, msg]) => ({
+          id: key,
+          text: msg.text,
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered",
+          reactions: sanitizeReactions(msg.reactions || []),
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
 
-      if (data) {
-        Object.keys(data).forEach((key) => {
-          const msg = data[key];
-          if (msg && msg.text && msg.username) {
-            loadedMessages.push({
-              id: key,
-              text: msg.text,
-              username: msg.username,
-              timestamp: msg.timestamp || Date.now(),
-              userId: msg.userId || "",
-              status: "delivered",
-              reactions: (msg.reactions || []).filter((r: any) => r !== null && r !== undefined),
-            });
-          }
-        });
-      }
-
-      loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
-      setMessages(loadedMessages);
-    } catch (error) {
-      console.error("Error loading messages:", error);
+      setMessages(loaded);
+    } catch (err) {
+      console.error("Error loading messages:", err);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
+  const loadOnlineUsers = useCallback(async () => {
+    try {
+      const res = await api.getUsers();
+      const data: Record<string, any> = await res.json();
+      const now = Date.now();
+      const active: User[] = [];
+
+      Object.entries(data || {}).forEach(([key, user]) => {
+        if (!user?.username || !user?.lastActive) return;
+        if (now - user.lastActive < USER_ACTIVE_THRESHOLD) {
+          active.push({
+            id: key,
+            username: user.username,
+            joinedAt: user.joinedAt || now,
+            lastActive: user.lastActive,
+          });
+        } else {
+          api.deleteUser(key).catch(console.error);
+        }
+      });
+
+      active.sort((a, b) => {
+        if (a.id === userIdRef.current) return -1;
+        if (b.id === userIdRef.current) return 1;
+        return a.username.localeCompare(b.username);
+      });
+
+      setOnlineUsers(active);
+    } catch (err) {
+      console.error("Error loading online users:", err);
+    }
+  }, []);
+
+  // ── User Presence ─────────────────────────────────────────
+
   const registerUser = useCallback(async () => {
     try {
-      const userData = {
-        username: username,
+      await api.putUser(userIdRef.current, {
+        username,
         joinedAt: Date.now(),
         lastActive: Date.now(),
-      };
-      await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(userData),
       });
-      setTimeout(() => {
-        loadOnlineUsers();
-      }, 1000);
-    } catch (error) {
-      console.error("Error registering user:", error);
+      setTimeout(loadOnlineUsers, 1000);
+    } catch (err) {
+      console.error("Error registering user:", err);
     }
   }, [username, loadOnlineUsers]);
 
   const removeUser = useCallback(async () => {
     try {
-      await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
-        method: "DELETE",
-      });
-    } catch (error) {
-      console.error("Error removing user:", error);
+      await api.deleteUser(userIdRef.current);
+    } catch (err) {
+      console.error("Error removing user:", err);
     }
   }, []);
 
-  // Initial load when joining chat
+  const updateLastActive = useCallback(async () => {
+    if (!isJoined) return;
+    try {
+      await api.patchUser(userIdRef.current, { lastActive: Date.now() });
+    } catch (err) {
+      console.error("Error updating last active:", err);
+    }
+  }, [isJoined]);
+
+  // ── Effects ───────────────────────────────────────────────
+
   useEffect(() => {
     if (!isJoined) return;
     registerUser();
@@ -193,30 +512,25 @@ export default function Home() {
     userHeartbeatRef.current = setInterval(() => {
       updateLastActive();
       loadOnlineUsers();
-    }, 30000);
+    }, HEARTBEAT_INTERVAL);
     return () => {
-      if (userHeartbeatRef.current) {
-        clearInterval(userHeartbeatRef.current);
-      }
+      clearInterval(userHeartbeatRef.current);
       removeUser();
     };
   }, [isJoined, registerUser, loadMessages, loadOnlineUsers, updateLastActive, removeUser]);
 
-  // Refresh online users every 5 seconds
   useEffect(() => {
     if (!isJoined) return;
-    const interval = setInterval(() => {
-      loadOnlineUsers();
-    }, 5000);
+    const interval = setInterval(loadOnlineUsers, USER_REFRESH_INTERVAL);
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Initialize Pusher for real-time updates
+  // ── Pusher ────────────────────────────────────────────────
+
   useEffect(() => {
     if (!isJoined) return;
 
@@ -228,46 +542,28 @@ export default function Home() {
     const channel = pusher.subscribe("private-chat-channel");
 
     channel.bind("new-message", (data: Message) => {
-      setMessages((prevMessages: Message[]) => {
-        const exists = prevMessages.some((msg) => msg.id === data.id);
-        if (!exists) {
-          const newMessages: Message[] = [
-            ...prevMessages,
-            { ...data, status: "delivered" },
-          ];
-          newMessages.sort((a, b) => a.timestamp - b.timestamp);
-          return newMessages;
-        }
-        return prevMessages;
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.id)) return prev;
+        return [...prev, { ...data, status: "delivered" }].sort(
+          (a, b) => a.timestamp - b.timestamp
+        );
       });
     });
 
     channel.bind(
       "message-reaction",
       (data: { messageId: string; reaction: Reaction | null }) => {
-        setMessages((prevMessages: Message[]) =>
-          prevMessages.map((msg) => {
+        if (!data.reaction) return;
+        setMessages((prev) =>
+          prev.map((msg) => {
             if (msg.id !== data.messageId) return msg;
-
-            if (data.reaction === null) {
-              // Removal handled optimistically on sender's side
-              return msg;
-            }
-
             const alreadyExists = msg.reactions?.some(
-              (r) =>
-                r !== null &&
-                r.userId === data.reaction!.userId &&
-                r.type === data.reaction!.type
+              (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
             );
             if (alreadyExists) return msg;
-
             return {
               ...msg,
-              reactions: [
-                ...(msg.reactions || []).filter((r) => r !== null),
-                data.reaction!,
-              ],
+              reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
             };
           })
         );
@@ -279,123 +575,49 @@ export default function Home() {
       channel.unsubscribe();
       pusher.disconnect();
     };
-  }, [isJoined]); // <-- This closing was missing before
+  }, [isJoined]);
+
+  // ── Actions ───────────────────────────────────────────────
 
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
     const message = messages.find((m) => m.id === messageId);
-    const hasReacted = message?.reactions?.some(
-      (r) => r !== null && r.userId === userIdRef.current && r.type === reactionType
+    const cleanReactions = sanitizeReactions(message?.reactions || []);
+    const hasReacted = cleanReactions.some(
+      (r) => r.userId === userIdRef.current && r.type === reactionType
     );
 
-    if (hasReacted) {
-      const updatedReactions =
-        message?.reactions?.filter(
-          (r) =>
-            r !== null &&
-            !(r.userId === userIdRef.current && r.type === reactionType)
-        ) || [];
-
-      setMessages((prevMessages: Message[]) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg
+    const updatedReactions = hasReacted
+      ? cleanReactions.filter(
+          (r) => !(r.userId === userIdRef.current && r.type === reactionType)
         )
+      : [
+          ...cleanReactions,
+          {
+            type: reactionType,
+            userId: userIdRef.current,
+            username,
+            timestamp: Date.now(),
+          },
+        ];
+
+    // Optimistic update
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg
+      )
+    );
+
+    try {
+      await api.putReactions(messageId, updatedReactions);
+      await api.sendReaction(
+        messageId,
+        hasReacted ? null : updatedReactions[updatedReactions.length - 1]
       );
-
-      try {
-        await fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updatedReactions),
-        });
-        await fetch("/api/send-reaction", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messageId, reaction: null }),
-        });
-      } catch (error) {
-        console.error("Error removing reaction:", error);
-      }
-    } else {
-      const reaction: Reaction = {
-        type: reactionType,
-        userId: userIdRef.current,
-        username: username,
-        timestamp: Date.now(),
-      };
-
-      const updatedReactions = [
-        ...(message?.reactions || []).filter((r) => r !== null),
-        reaction,
-      ];
-
-      setMessages((prevMessages: Message[]) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg
-        )
-      );
-
-      try {
-        await fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updatedReactions),
-        });
-        await fetch("/api/send-reaction", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messageId, reaction }),
-        });
-      } catch (error) {
-        console.error("Error adding reaction:", error);
-      }
+    } catch (err) {
+      console.error("Error updating reaction:", err);
     }
 
     setHoveredMessageId(null);
-  };
-
-  const getReactionCounts = (reactions?: Reaction[]) => {
-    if (!reactions) return {};
-    return reactions
-      .filter((r) => r !== null && r !== undefined)
-      .reduce((acc: Record<string, number>, reaction) => {
-        acc[reaction.type] = (acc[reaction.type] || 0) + 1;
-        return acc;
-      }, {});
-  };
-
-  const getUniqueReactions = (reactions?: Reaction[]) => {
-    if (!reactions) return [];
-    const unique = new Map();
-    reactions
-      .filter((r) => r !== null && r !== undefined)
-      .forEach((reaction) => {
-        if (!unique.has(reaction.type)) {
-          unique.set(reaction.type, reaction);
-        }
-      });
-    return Array.from(unique.values());
-  };
-
-  const hasUserReacted = (
-    reactions: Reaction[] | undefined,
-    reactionType: ReactionType
-  ) => {
-    return reactions
-      ?.filter((r) => r !== null && r !== undefined)
-      .some((r) => r.userId === userIdRef.current && r.type === reactionType);
-  };
-
-  const handleMouseEnter = (messageId: string) => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
-    setHoveredMessageId(messageId);
-  };
-
-  const handleMouseLeave = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setHoveredMessageId(null);
-    }, 200);
   };
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -406,7 +628,7 @@ export default function Home() {
     const newMessage: Message = {
       id: messageId,
       text: inputMessage,
-      username: username,
+      username,
       timestamp: Date.now(),
       userId: userIdRef.current,
       status: "sending",
@@ -414,74 +636,38 @@ export default function Home() {
     };
 
     setInputMessage("");
-    setMessages((prevMessages: Message[]) => {
-      const exists = prevMessages.some((msg) => msg.id === messageId);
-      if (!exists) {
-        const newMessages: Message[] = [...prevMessages, newMessage];
-        newMessages.sort((a, b) => a.timestamp - b.timestamp);
-        return newMessages;
-      }
-      return prevMessages;
+
+    const updateStatus = (status: MessageStatus | undefined) =>
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+      );
+
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === messageId)) return prev;
+      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
     });
 
     try {
-      setMessages((prevMessages: Message[]) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId
-            ? { ...msg, status: "sent" as MessageStatus }
-            : msg
-        )
-      );
-
-      const response = await fetch("/api/send-message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newMessage),
-      });
-
-      if (response.ok) {
-        setMessages((prevMessages: Message[]) =>
-          prevMessages.map((msg) =>
-            msg.id === messageId
-              ? { ...msg, status: "delivered" as MessageStatus }
-              : msg
-          )
-        );
-        setTimeout(() => {
-          setMessages((prevMessages: Message[]) =>
-            prevMessages.map((msg) =>
-              msg.id === messageId ? { ...msg, status: undefined } : msg
-            )
-          );
-        }, 2000);
+      updateStatus("sent");
+      const res = await api.sendMessage(newMessage);
+      if (res.ok) {
+        updateStatus("delivered");
+        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
       } else {
-        setMessages((prevMessages: Message[]) =>
-          prevMessages.map((msg) =>
-            msg.id === messageId
-              ? { ...msg, status: "error" as MessageStatus }
-              : msg
-          )
-        );
+        updateStatus("error");
       }
-    } catch (error) {
-      console.error("Error sending message:", error);
-      setMessages((prevMessages: Message[]) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId
-            ? { ...msg, status: "error" as MessageStatus }
-            : msg
-        )
-      );
+    } catch (err) {
+      console.error("Error sending message:", err);
+      updateStatus("error");
     }
   };
 
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
-    if (username.trim()) {
-      localStorage.setItem("chat-username", username);
-      localStorage.setItem("chat-userId", userIdRef.current);
-      setIsJoined(true);
-    }
+    if (!username.trim()) return;
+    localStorage.setItem("chat-username", username);
+    localStorage.setItem("chat-userId", userIdRef.current);
+    setIsJoined(true);
   };
 
   const clearSavedUser = () => {
@@ -491,98 +677,21 @@ export default function Home() {
     window.location.reload();
   };
 
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  // ── Hover Handlers ────────────────────────────────────────
+
+  const handleMouseEnter = (messageId: string) => {
+    clearTimeout(hoverTimeoutRef.current);
+    setHoveredMessageId(messageId);
   };
 
-  const getStatusIcon = (status?: MessageStatus) => {
-    switch (status) {
-      case "sending":
-        return (
-          <div className="flex items-center gap-1 text-xs text-gray-500">
-            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-                fill="none"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-            <span>Sending...</span>
-          </div>
-        );
-      case "sent":
-        return (
-          <div className="flex items-center gap-1 text-xs text-blue-500">
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-            <span>Sent</span>
-          </div>
-        );
-      case "delivered":
-        return (
-          <div className="flex items-center gap-1 text-xs text-green-500">
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <span>Delivered</span>
-          </div>
-        );
-      case "error":
-        return (
-          <div className="flex items-center gap-1 text-xs text-red-500">
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <span>Failed</span>
-          </div>
-        );
-      default:
-        return null;
-    }
+  const handleMouseLeave = () => {
+    hoverTimeoutRef.current = setTimeout(
+      () => setHoveredMessageId(null),
+      200
+    );
   };
+
+  // ── Join Screen ───────────────────────────────────────────
 
   if (!isJoined) {
     return (
@@ -631,6 +740,8 @@ export default function Home() {
     );
   }
 
+  // ── Chat Screen ───────────────────────────────────────────
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
@@ -655,10 +766,10 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main Content with Sidebar */}
+      {/* Main */}
       <div className="max-w-6xl mx-auto p-4">
         <div className="flex gap-4">
-          {/* Online Users Sidebar */}
+          {/* Sidebar */}
           <div className="w-72 bg-white rounded-xl shadow-lg overflow-hidden flex-shrink-0">
             <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
               <div className="flex items-center gap-2">
@@ -682,165 +793,43 @@ export default function Home() {
             </div>
             <div className="h-[500px] overflow-y-auto">
               {onlineUsers.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  No active users
-                </div>
+                <p className="text-center text-gray-500 py-8">No active users</p>
               ) : (
                 onlineUsers.map((user) => (
-                  <div
+                  <UserListItem
                     key={user.id}
-                    className={`flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors border-b ${
-                      user.id === userIdRef.current ? "bg-blue-50" : ""
-                    }`}
-                  >
-                    <div className="relative">
-                      <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
-                          user.id === userIdRef.current
-                            ? "bg-gradient-to-br from-green-400 to-green-600"
-                            : "bg-gradient-to-br from-blue-400 to-indigo-500"
-                        }`}
-                      >
-                        {user.username && user.username.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-800">
-                        {user.username}
-                        {user.id === userIdRef.current && (
-                          <span className="ml-2 text-xs text-green-600">
-                            (You)
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-gray-500">Active now</p>
-                    </div>
-                  </div>
+                    user={user}
+                    isCurrentUser={user.id === userIdRef.current}
+                  />
                 ))
               )}
             </div>
           </div>
 
-          {/* Chat Area */}
+          {/* Chat */}
           <div className="flex-1 bg-white rounded-xl shadow-lg overflow-hidden">
             <div className="h-[500px] overflow-y-auto p-4 space-y-3">
               {isLoading && (
-                <div className="text-center text-gray-500 mt-8">
+                <p className="text-center text-gray-500 mt-8">
                   Loading messages...
-                </div>
+                </p>
               )}
               {!isLoading && messages.length === 0 && (
-                <div className="text-center text-gray-500 mt-8">
+                <p className="text-center text-gray-500 mt-8">
                   No messages yet. Start the conversation!
-                </div>
+                </p>
               )}
-              {messages.map((message) => {
-                const reactionCounts = getReactionCounts(message.reactions);
-                const uniqueReactions = getUniqueReactions(message.reactions);
-                const isHovered = hoveredMessageId === message.id;
-
-                return (
-                  <div
-                    key={message.id}
-                    className={`flex ${
-                      message.userId === userIdRef.current
-                        ? "justify-end"
-                        : "justify-start"
-                    } mb-8`}
-                  >
-                    {/* Wrapper to position reaction picker & bubble together */}
-                    <div
-                      className="relative max-w-[70%]"
-                      onMouseEnter={() => handleMouseEnter(message.id)}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      {/* Reaction Picker */}
-                      {isHovered && (
-                        <div
-                          className={`absolute -top-12 ${
-                            message.userId === userIdRef.current
-                              ? "right-0"
-                              : "left-0"
-                          } bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20`}
-                        >
-                          {REACTIONS.map((reaction) => {
-                            const isActive = hasUserReacted(
-                              message.reactions,
-                              reaction
-                            );
-                            return (
-                              <button
-                                key={reaction}
-                                onClick={() =>
-                                  addReaction(message.id, reaction)
-                                }
-                                className={`hover:bg-gray-100 p-2 rounded transition-colors text-xl ${
-                                  isActive ? "bg-blue-100" : ""
-                                }`}
-                              >
-                                {reaction}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Message Bubble */}
-                      <div
-                        className={`rounded-lg p-3 ${
-                          message.userId === userIdRef.current
-                            ? "bg-blue-500 text-white"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-sm">
-                            {message.username}
-                          </span>
-                          <span className="text-xs opacity-75">
-                            {formatTime(message.timestamp)}
-                          </span>
-                        </div>
-                        <p className="break-words">{message.text}</p>
-                        {message.userId === userIdRef.current &&
-                          message.status && (
-                            <div className="mt-1 flex justify-end">
-                              {getStatusIcon(message.status)}
-                            </div>
-                          )}
-                      </div>
-
-                      {/* Reactions Display */}
-                      {uniqueReactions.length > 0 && (
-                        <div
-                          className={`absolute -bottom-6 ${
-                            message.userId === userIdRef.current
-                              ? "right-0"
-                              : "left-0"
-                          } flex flex-wrap gap-1`}
-                        >
-                          {uniqueReactions.map((reaction, idx) => (
-                            <div
-                              key={idx}
-                              className={`inline-flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm ${
-                                hasUserReacted(message.reactions, reaction.type)
-                                  ? "border-blue-500 bg-blue-50"
-                                  : ""
-                              }`}
-                            >
-                              <span>{reaction.type}</span>
-                              <span className="text-xs text-gray-600">
-                                {reactionCounts[reaction.type]}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  currentUserId={userIdRef.current}
+                  isHovered={hoveredMessageId === message.id}
+                  onMouseEnter={() => handleMouseEnter(message.id)}
+                  onMouseLeave={handleMouseLeave}
+                  onReact={(type) => addReaction(message.id, type)}
+                />
+              ))}
               <div ref={messagesEndRef} />
             </div>
 
