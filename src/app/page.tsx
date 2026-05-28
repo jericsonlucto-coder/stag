@@ -12,6 +12,15 @@ interface Message {
   userId: string;
 }
 
+// Firebase message structure
+interface FirebaseMessage {
+  text: string;
+  username: string;
+  timestamp: number;
+  userId: string;
+  createdAt: string;
+}
+
 const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 };
@@ -31,7 +40,7 @@ export default function Home() {
   const loadMessages = async () => {
     try {
       const response = await fetch(`${FIREBASE_DB_URL}/messages.json`);
-      const data = await response.json();
+      const data: Record<string, FirebaseMessage> = await response.json();
       
       const loadedMessages: Message[] = [];
       if (data) {
