@@ -5,6 +5,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
 
 type MessageStatus = "sending" | "sent" | "delivered" | "error";
+type ReactionType = "👍" | "❤️" | "😂" | "😮" | "😢" | "🙏";
+
+interface Reaction {
+  type: ReactionType;
+  userId: string;
+  username: string;
+  timestamp: number;
+}
 
 interface Message {
   id: string;
@@ -13,6 +21,7 @@ interface Message {
   timestamp: number;
   userId: string;
   status?: MessageStatus;
+  reactions?: Reaction[];
 }
 
 interface User {
@@ -29,6 +38,7 @@ interface FirebaseMessage {
   timestamp: number;
   userId: string;
   createdAt: string;
+  reactions?: Reaction[];
 }
 
 const generateId = () => {
@@ -37,6 +47,8 @@ const generateId = () => {
 
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 
+const REACTIONS: ReactionType[] = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -44,6 +56,7 @@ export default function Home() {
   const [isJoined, setIsJoined] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
+  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -57,7 +70,6 @@ export default function Home() {
       console.log("Found saved username:", savedUsername);
       setUsername(savedUsername);
       userIdRef.current = savedUserId;
-      // Auto-join if username exists
       setIsJoined(true);
     }
   }, []);
@@ -76,20 +88,16 @@ export default function Home() {
           lastActive: Date.now(),
         }),
       });
-      console.log("Updated last active for user:", username);
     } catch (error) {
       console.error("Error updating last active:", error);
     }
-  }, [isJoined, username]);
+  }, [isJoined]);
 
   // Load online users from Firebase
   const loadOnlineUsers = useCallback(async () => {
     try {
-      console.log("Fetching online users from Firebase...");
       const response = await fetch(`${FIREBASE_DB_URL}/users.json`);
       const data: Record<string, any> = await response.json();
-      
-      console.log("Raw users data from Firebase:", data);
       
       const now = Date.now();
       const activeUsers: User[] = [];
@@ -97,12 +105,8 @@ export default function Home() {
       if (data) {
         Object.keys(data).forEach((key) => {
           const user = data[key];
-          // Check if user has required properties
           if (user && user.username && user.lastActive) {
             const timeSinceLastActive = now - user.lastActive;
-            console.log(`User ${user.username} last active ${timeSinceLastActive}ms ago`);
-            
-            // Consider users active if they've been active in the last 60 seconds
             if (timeSinceLastActive < 60000) {
               activeUsers.push({
                 id: key,
@@ -111,26 +115,20 @@ export default function Home() {
                 lastActive: user.lastActive,
               });
             } else {
-              console.log(`Removing inactive user: ${user.username}`);
-              // Remove inactive users
               fetch(`${FIREBASE_DB_URL}/users/${key}.json`, {
                 method: "DELETE",
               }).catch(console.error);
             }
-          } else {
-            console.log("Invalid user data found:", user);
           }
         });
       }
       
-      // Sort users: current user first, then others alphabetically
       activeUsers.sort((a, b) => {
         if (a.id === userIdRef.current) return -1;
         if (b.id === userIdRef.current) return 1;
         return (a.username || "").localeCompare(b.username || "");
       });
       
-      console.log("Active users found:", activeUsers.length);
       setOnlineUsers(activeUsers);
     } catch (error) {
       console.error("Error loading online users:", error);
@@ -140,7 +138,6 @@ export default function Home() {
   // Load messages from Firebase
   const loadMessages = useCallback(async () => {
     try {
-      console.log("Loading messages from Firebase...");
       const response = await fetch(`${FIREBASE_DB_URL}/messages.json`);
       const data: Record<string, FirebaseMessage> = await response.json();
       
@@ -156,13 +153,13 @@ export default function Home() {
               timestamp: msg.timestamp || Date.now(),
               userId: msg.userId || "",
               status: "delivered",
+              reactions: msg.reactions || [],
             });
           }
         });
       }
       
       loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
-      console.log("Loaded messages:", loadedMessages.length);
       setMessages(loadedMessages);
     } catch (error) {
       console.error("Error loading messages:", error);
@@ -180,9 +177,7 @@ export default function Home() {
         lastActive: Date.now(),
       };
       
-      console.log("Registering user:", userData);
-      
-      const response = await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
+      await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -190,11 +185,6 @@ export default function Home() {
         body: JSON.stringify(userData),
       });
       
-      const result = await response.json();
-      console.log("User registration response:", result);
-      console.log("User registered successfully:", username);
-      
-      // Immediately load online users after registration
       setTimeout(() => {
         loadOnlineUsers();
       }, 1000);
@@ -206,28 +196,24 @@ export default function Home() {
   // Remove user when leaving chat
   const removeUser = useCallback(async () => {
     try {
-      console.log("Removing user:", username);
       await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
         method: "DELETE",
       });
-      console.log("User removed:", username);
     } catch (error) {
       console.error("Error removing user:", error);
     }
-  }, [username]);
+  }, []);
 
   // Initial load when joining chat
   useEffect(() => {
     if (!isJoined) return;
     
-    console.log("User joined chat, registering...");
     registerUser();
     loadMessages();
     
-    // Set up heartbeat to update last active every 30 seconds
     userHeartbeatRef.current = setInterval(() => {
       updateLastActive();
-      loadOnlineUsers(); // Refresh online users list
+      loadOnlineUsers();
     }, 30000);
     
     return () => {
@@ -258,7 +244,6 @@ export default function Home() {
   useEffect(() => {
     if (!isJoined) return;
 
-    console.log("Initializing Pusher...");
     const pusher = new Pusher("bc4bbe143420c20c0e9d", {
       cluster: "ap1",
       authEndpoint: "/api/pusher-auth",
@@ -267,7 +252,6 @@ export default function Home() {
     const channel = pusher.subscribe("private-chat-channel");
     
     channel.bind("new-message", (data: Message) => {
-      console.log("New message received via Pusher:", data);
       setMessages((prevMessages: Message[]) => {
         const exists = prevMessages.some(msg => msg.id === data.id);
         if (!exists) {
@@ -279,12 +263,95 @@ export default function Home() {
       });
     });
 
+    channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction }) => {
+      setMessages((prevMessages: Message[]) =>
+        prevMessages.map((msg) =>
+          msg.id === data.messageId
+            ? {
+                ...msg,
+                reactions: [...(msg.reactions || []), data.reaction],
+              }
+            : msg
+        )
+      );
+    });
+
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
       pusher.disconnect();
     };
   }, [isJoined]);
+
+  const addReaction = async (messageId: string, reactionType: ReactionType) => {
+    const reaction: Reaction = {
+      type: reactionType,
+      userId: userIdRef.current,
+      username: username,
+      timestamp: Date.now(),
+    };
+
+    // Optimistically update UI
+    setMessages((prevMessages: Message[]) =>
+      prevMessages.map((msg) =>
+        msg.id === messageId
+          ? {
+              ...msg,
+              reactions: [...(msg.reactions || []), reaction],
+            }
+          : msg
+      )
+    );
+
+    // Save reaction to Firebase
+    try {
+      const message = messages.find(m => m.id === messageId);
+      const updatedReactions = [...(message?.reactions || []), reaction];
+      
+      await fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedReactions),
+      });
+
+      // Trigger Pusher event for real-time reaction update
+      await fetch("/api/send-reaction", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messageId,
+          reaction,
+        }),
+      });
+    } catch (error) {
+      console.error("Error adding reaction:", error);
+    }
+
+    setShowReactionPicker(null);
+  };
+
+  const getReactionCounts = (reactions?: Reaction[]) => {
+    if (!reactions) return {};
+    return reactions.reduce((acc: Record<string, number>, reaction) => {
+      acc[reaction.type] = (acc[reaction.type] || 0) + 1;
+      return acc;
+    }, {});
+  };
+
+  const getUniqueReactions = (reactions?: Reaction[]) => {
+    if (!reactions) return [];
+    const unique = new Map();
+    reactions.forEach(reaction => {
+      if (!unique.has(reaction.type)) {
+        unique.set(reaction.type, reaction);
+      }
+    });
+    return Array.from(unique.values());
+  };
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -298,9 +365,8 @@ export default function Home() {
       timestamp: Date.now(),
       userId: userIdRef.current,
       status: "sending",
+      reactions: [],
     };
-
-    console.log("Sending message:", newMessage);
     
     setInputMessage("");
     
@@ -330,7 +396,6 @@ export default function Home() {
       });
 
       if (response.ok) {
-        console.log("Message sent successfully");
         setMessages((prevMessages: Message[]) =>
           prevMessages.map((msg) =>
             msg.id === messageId ? { ...msg, status: "delivered" as MessageStatus } : msg
@@ -345,21 +410,11 @@ export default function Home() {
           );
         }, 2000);
       } else {
-        const error = await response.json();
-        console.error("Failed to send message:", error);
         setMessages((prevMessages: Message[]) =>
           prevMessages.map((msg) =>
             msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
           )
         );
-        
-        setTimeout(() => {
-          setMessages((prevMessages: Message[]) =>
-            prevMessages.map((msg) =>
-              msg.id === messageId ? { ...msg, status: undefined } : msg
-            )
-          );
-        }, 3000);
       }
     } catch (error) {
       console.error("Error sending message:", error);
@@ -368,22 +423,12 @@ export default function Home() {
           msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
         )
       );
-      
-      setTimeout(() => {
-        setMessages((prevMessages: Message[]) =>
-          prevMessages.map((msg) =>
-            msg.id === messageId ? { ...msg, status: undefined } : msg
-          )
-        );
-      }, 3000);
     }
   };
 
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (username.trim()) {
-      console.log("User joining with username:", username);
-      // Save username and userId to localStorage
       localStorage.setItem("chat-username", username);
       localStorage.setItem("chat-userId", userIdRef.current);
       setIsJoined(true);
@@ -510,7 +555,6 @@ export default function Home() {
             <button
               onClick={clearSavedUser}
               className="text-sm text-red-500 hover:text-red-600"
-              title="Clear saved user and restart"
             >
               Leave & Clear
             </button>
@@ -521,7 +565,7 @@ export default function Home() {
       {/* Main Content with Sidebar */}
       <div className="max-w-6xl mx-auto p-4">
         <div className="flex gap-4">
-          {/* Online Users Sidebar - Left */}
+          {/* Online Users Sidebar */}
           <div className="w-72 bg-white rounded-xl shadow-lg overflow-hidden flex-shrink-0">
             <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
               <div className="flex items-center gap-2">
@@ -561,9 +605,7 @@ export default function Home() {
                           <span className="ml-2 text-xs text-green-600">(You)</span>
                         )}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        Active now
-                      </p>
+                      <p className="text-xs text-gray-500">Active now</p>
                     </div>
                   </div>
                 ))
@@ -584,39 +626,87 @@ export default function Home() {
                   No messages yet. Start the conversation!
                 </div>
               )}
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.userId === userIdRef.current
-                      ? "justify-end"
-                      : "justify-start"
-                  }`}
-                >
+              {messages.map((message) => {
+                const reactionCounts = getReactionCounts(message.reactions);
+                const uniqueReactions = getUniqueReactions(message.reactions);
+                
+                return (
                   <div
-                    className={`max-w-[70%] rounded-lg p-3 ${
+                    key={message.id}
+                    className={`flex ${
                       message.userId === userIdRef.current
-                        ? "bg-blue-500 text-white"
-                        : "bg-gray-100 text-gray-800"
-                    }`}
+                        ? "justify-end"
+                        : "justify-start"
+                    } relative group`}
                   >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-semibold text-sm">
-                        {message.username}
-                      </span>
-                      <span className="text-xs opacity-75">
-                        {formatTime(message.timestamp)}
-                      </span>
+                    <div
+                      className={`max-w-[70%] rounded-lg p-3 ${
+                        message.userId === userIdRef.current
+                          ? "bg-blue-500 text-white"
+                          : "bg-gray-100 text-gray-800"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-sm">
+                          {message.username}
+                        </span>
+                        <span className="text-xs opacity-75">
+                          {formatTime(message.timestamp)}
+                        </span>
+                      </div>
+                      <p className="break-words">{message.text}</p>
+                      
+                      {/* Reactions Display */}
+                      {uniqueReactions.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {uniqueReactions.map((reaction, idx) => (
+                            <div
+                              key={idx}
+                              className="inline-flex items-center gap-1 bg-white/20 rounded-full px-2 py-0.5 text-sm"
+                            >
+                              <span>{reaction.type}</span>
+                              <span className="text-xs">
+                                {reactionCounts[reaction.type]}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {message.userId === userIdRef.current && message.status && (
+                        <div className="mt-1 flex justify-end">
+                          {getStatusIcon(message.status)}
+                        </div>
+                      )}
                     </div>
-                    <p className="break-words">{message.text}</p>
-                    {message.userId === userIdRef.current && message.status && (
-                      <div className="mt-1 flex justify-end">
-                        {getStatusIcon(message.status)}
+                    
+                    {/* Reaction Button */}
+                    <button
+                      onClick={() => setShowReactionPicker(showReactionPicker === message.id ? null : message.id)}
+                      className="absolute -right-8 top-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-200 hover:bg-gray-300 rounded-full p-1"
+                    >
+                      <svg className="h-4 w-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                    
+                    {/* Reaction Picker */}
+                    {showReactionPicker === message.id && (
+                      <div className="absolute -top-12 left-0 bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-10">
+                        {REACTIONS.map((reaction) => (
+                          <button
+                            key={reaction}
+                            onClick={() => addReaction(message.id, reaction)}
+                            className="hover:bg-gray-100 p-2 rounded transition-colors text-xl"
+                          >
+                            {reaction}
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
