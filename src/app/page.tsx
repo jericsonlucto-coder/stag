@@ -62,16 +62,20 @@ export default function Home() {
           lastActive: Date.now(),
         }),
       });
+      console.log("Updated last active for user:", username);
     } catch (error) {
       console.error("Error updating last active:", error);
     }
-  }, [isJoined]);
+  }, [isJoined, username]);
 
   // Load online users from Firebase
   const loadOnlineUsers = useCallback(async () => {
     try {
+      console.log("Fetching online users from Firebase...");
       const response = await fetch(`${FIREBASE_DB_URL}/users.json`);
-      const data: Record<string, User> = await response.json();
+      const data: Record<string, any> = await response.json();
+      
+      console.log("Raw users data from Firebase:", data);
       
       const now = Date.now();
       const activeUsers: User[] = [];
@@ -79,17 +83,28 @@ export default function Home() {
       if (data) {
         Object.keys(data).forEach((key) => {
           const user = data[key];
-          // Consider users active if they've been active in the last 60 seconds
-          if (now - user.lastActive < 60000) {
-            activeUsers.push({
-              ...user,
-              id: key,
-            });
+          // Check if user has required properties
+          if (user && user.username && user.lastActive) {
+            const timeSinceLastActive = now - user.lastActive;
+            console.log(`User ${user.username} last active ${timeSinceLastActive}ms ago`);
+            
+            // Consider users active if they've been active in the last 60 seconds
+            if (timeSinceLastActive < 60000) {
+              activeUsers.push({
+                id: key,
+                username: user.username,
+                joinedAt: user.joinedAt || now,
+                lastActive: user.lastActive,
+              });
+            } else {
+              console.log(`Removing inactive user: ${user.username}`);
+              // Remove inactive users
+              fetch(`${FIREBASE_DB_URL}/users/${key}.json`, {
+                method: "DELETE",
+              }).catch(console.error);
+            }
           } else {
-            // Remove inactive users
-            fetch(`${FIREBASE_DB_URL}/users/${key}.json`, {
-              method: "DELETE",
-            }).catch(console.error);
+            console.log("Invalid user data found:", user);
           }
         });
       }
@@ -98,9 +113,10 @@ export default function Home() {
       activeUsers.sort((a, b) => {
         if (a.id === userIdRef.current) return -1;
         if (b.id === userIdRef.current) return 1;
-        return a.username.localeCompare(b.username);
+        return (a.username || "").localeCompare(b.username || "");
       });
       
+      console.log("Active users found:", activeUsers.length);
       setOnlineUsers(activeUsers);
     } catch (error) {
       console.error("Error loading online users:", error);
@@ -118,14 +134,16 @@ export default function Home() {
       if (data) {
         Object.keys(data).forEach((key) => {
           const msg = data[key];
-          loadedMessages.push({
-            id: key,
-            text: msg.text,
-            username: msg.username,
-            timestamp: msg.timestamp,
-            userId: msg.userId,
-            status: "delivered",
-          });
+          if (msg && msg.text && msg.username) {
+            loadedMessages.push({
+              id: key,
+              text: msg.text,
+              username: msg.username,
+              timestamp: msg.timestamp || Date.now(),
+              userId: msg.userId || "",
+              status: "delivered",
+            });
+          }
         });
       }
       
@@ -142,14 +160,15 @@ export default function Home() {
   // Register user when joining chat
   const registerUser = useCallback(async () => {
     try {
-      const userData: User = {
-        id: userIdRef.current,
+      const userData = {
         username: username,
         joinedAt: Date.now(),
         lastActive: Date.now(),
       };
       
-      await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
+      console.log("Registering user:", userData);
+      
+      const response = await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -157,15 +176,23 @@ export default function Home() {
         body: JSON.stringify(userData),
       });
       
-      console.log("User registered:", username);
+      const result = await response.json();
+      console.log("User registration response:", result);
+      console.log("User registered successfully:", username);
+      
+      // Immediately load online users after registration
+      setTimeout(() => {
+        loadOnlineUsers();
+      }, 1000);
     } catch (error) {
       console.error("Error registering user:", error);
     }
-  }, [username]);
+  }, [username, loadOnlineUsers]);
 
   // Remove user when leaving chat
   const removeUser = useCallback(async () => {
     try {
+      console.log("Removing user:", username);
       await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
         method: "DELETE",
       });
@@ -179,9 +206,9 @@ export default function Home() {
   useEffect(() => {
     if (!isJoined) return;
     
+    console.log("User joined chat, registering...");
     registerUser();
     loadMessages();
-    loadOnlineUsers();
     
     // Set up heartbeat to update last active every 30 seconds
     userHeartbeatRef.current = setInterval(() => {
@@ -197,13 +224,13 @@ export default function Home() {
     };
   }, [isJoined, registerUser, loadMessages, loadOnlineUsers, updateLastActive, removeUser]);
 
-  // Refresh online users every 10 seconds
+  // Refresh online users every 5 seconds
   useEffect(() => {
     if (!isJoined) return;
     
     const interval = setInterval(() => {
       loadOnlineUsers();
-    }, 10000);
+    }, 5000);
     
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
@@ -341,7 +368,7 @@ export default function Home() {
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (username.trim()) {
-      console.log("User joined:", username);
+      console.log("User joining with username:", username);
       setIsJoined(true);
     }
   };
@@ -497,7 +524,7 @@ export default function Home() {
                           ? "bg-gradient-to-br from-green-400 to-green-600"
                           : "bg-gradient-to-br from-blue-400 to-indigo-500"
                       }`}>
-                        {user.username.charAt(0).toUpperCase()}
+                        {user.username && user.username.charAt(0).toUpperCase()}
                       </div>
                       <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
                     </div>
