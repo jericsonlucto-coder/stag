@@ -264,25 +264,31 @@ export default function Home() {
       });
     });
 
-    channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction }) => {
+    channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction | null }) => {
       setMessages((prevMessages: Message[]) =>
-        prevMessages.map((msg) =>
-          msg.id === data.messageId
-            ? {
-                ...msg,
-                reactions: [...(msg.reactions || []), data.reaction],
-              }
-            : msg
-        )
+        prevMessages.map((msg) => {
+          if (msg.id !== data.messageId) return msg;
+    
+          // null means a reaction was removed — reload reactions from Firebase
+          if (data.reaction === null) {
+            // Filter out stale reactions by re-fetching, but for now just return as-is
+            // The optimistic update already handled the sender's UI
+            return msg;
+          }
+    
+          // Check if reaction already exists to avoid duplicates
+          const alreadyExists = msg.reactions?.some(
+            (r) => r !== null && r.userId === data.reaction!.userId && r.type === data.reaction!.type
+          );
+          if (alreadyExists) return msg;
+    
+          return {
+            ...msg,
+            reactions: [...(msg.reactions || []).filter(r => r !== null), data.reaction!],
+          };
+        })
       );
     });
-
-    return () => {
-      channel.unbind_all();
-      channel.unsubscribe();
-      pusher.disconnect();
-    };
-  }, [isJoined]);
 
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
     const message = messages.find(m => m.id === messageId);
@@ -382,25 +388,31 @@ export default function Home() {
 
   const getReactionCounts = (reactions?: Reaction[]) => {
     if (!reactions) return {};
-    return reactions.reduce((acc: Record<string, number>, reaction) => {
-      acc[reaction.type] = (acc[reaction.type] || 0) + 1;
-      return acc;
-    }, {});
+    return reactions
+      .filter((reaction) => reaction !== null && reaction !== undefined)
+      .reduce((acc: Record<string, number>, reaction) => {
+        acc[reaction.type] = (acc[reaction.type] || 0) + 1;
+        return acc;
+      }, {});
   };
 
   const getUniqueReactions = (reactions?: Reaction[]) => {
     if (!reactions) return [];
     const unique = new Map();
-    reactions.forEach(reaction => {
-      if (!unique.has(reaction.type)) {
-        unique.set(reaction.type, reaction);
-      }
-    });
+    reactions
+      .filter((reaction) => reaction !== null && reaction !== undefined)
+      .forEach((reaction) => {
+        if (!unique.has(reaction.type)) {
+          unique.set(reaction.type, reaction);
+        }
+      });
     return Array.from(unique.values());
   };
 
   const hasUserReacted = (reactions: Reaction[] | undefined, reactionType: ReactionType) => {
-    return reactions?.some(r => r.userId === userIdRef.current && r.type === reactionType);
+    return reactions
+      ?.filter((r) => r !== null && r !== undefined)
+      .some((r) => r.userId === userIdRef.current && r.type === reactionType);
   };
 
   const handleMouseEnter = (messageId: string) => {
