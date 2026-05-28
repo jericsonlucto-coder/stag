@@ -7,6 +7,11 @@ interface Reaction {
   timestamp: number;
 }
 
+interface ReactionRequest {
+  messageId: string;
+  reaction: Reaction;
+}
+
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
 const PUSHER_SECRET = "bbd18207d17c2f39529e";
@@ -40,7 +45,8 @@ async function getMD5(str: string): Promise<string> {
 
 export async function POST(request: Request) {
   try {
-    const { messageId, reaction } = await request.json();
+    const body: ReactionRequest = await request.json();
+    const { messageId, reaction } = body;
     
     const payload = {
       name: "message-reaction",
