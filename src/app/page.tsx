@@ -396,7 +396,6 @@ export default function Home() {
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [isUserActive, setIsUserActive] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
@@ -404,29 +403,64 @@ export default function Home() {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
+  // ── User Presence Functions (Declared first) ─────────────────────────
+  const updateLastActive = useCallback(async () => {
+    if (!isJoined) return;
+    try {
+      await api.patchUser(userIdRef.current, { lastActive: Date.now() });
+      console.log("Last active updated for user:", username);
+    } catch (err) {
+      console.error("Error updating last active:", err);
+    }
+  }, [isJoined, username]);
+
+  const loadOnlineUsers = useCallback(async () => {
+    try {
+      const res = await api.getUsers();
+      const data: Record<string, any> = await res.json();
+      const now = Date.now();
+      const active: User[] = [];
+      Object.entries(data || {}).forEach(([key, user]) => {
+        if (!user?.username || !user?.lastActive) return;
+        if (now - user.lastActive < USER_ACTIVE_THRESHOLD) {
+          active.push({
+            id: key,
+            username: user.username,
+            joinedAt: user.joinedAt || now,
+            lastActive: user.lastActive,
+          });
+        } else {
+          api.deleteUser(key).catch(console.error);
+        }
+      });
+      active.sort((a, b) => {
+        if (a.id === userIdRef.current) return -1;
+        if (b.id === userIdRef.current) return 1;
+        return a.username.localeCompare(b.username);
+      });
+      setOnlineUsers(active);
+    } catch (err) {
+      console.error("Error loading online users:", err);
+    }
+  }, []);
+
   // ── Track user activity ──────────────────────────────────
   const updateUserActivity = useCallback(() => {
     if (!isJoined) return;
-    
-    // Set user as active
-    if (!isUserActive) {
-      setIsUserActive(true);
-      // Re-register user as active when they become active again
-      updateLastActive();
-      loadOnlineUsers();
-    }
     
     // Clear the inactivity timeout
     if (activityTimeoutRef.current) {
       clearTimeout(activityTimeoutRef.current);
     }
     
+    // Update last active immediately
+    updateLastActive();
+    
     // Set a timeout to mark user as inactive after 2 minutes of no activity
     activityTimeoutRef.current = setTimeout(() => {
-      setIsUserActive(false);
       console.log("User marked as inactive due to no activity");
     }, 120000); // 2 minutes
-  }, [isJoined, isUserActive, updateLastActive, loadOnlineUsers]);
+  }, [isJoined, updateLastActive]);
 
   // ── Track user events for activity ───────────────────────
   useEffect(() => {
@@ -606,36 +640,6 @@ export default function Home() {
     }
   }, []);
 
-  const loadOnlineUsers = useCallback(async () => {
-    try {
-      const res = await api.getUsers();
-      const data: Record<string, any> = await res.json();
-      const now = Date.now();
-      const active: User[] = [];
-      Object.entries(data || {}).forEach(([key, user]) => {
-        if (!user?.username || !user?.lastActive) return;
-        if (now - user.lastActive < USER_ACTIVE_THRESHOLD) {
-          active.push({
-            id: key,
-            username: user.username,
-            joinedAt: user.joinedAt || now,
-            lastActive: user.lastActive,
-          });
-        } else {
-          api.deleteUser(key).catch(console.error);
-        }
-      });
-      active.sort((a, b) => {
-        if (a.id === userIdRef.current) return -1;
-        if (b.id === userIdRef.current) return 1;
-        return a.username.localeCompare(b.username);
-      });
-      setOnlineUsers(active);
-    } catch (err) {
-      console.error("Error loading online users:", err);
-    }
-  }, []);
-
   // ── User Presence ─────────────────────────────────────────
   const registerUser = useCallback(async () => {
     try {
@@ -657,16 +661,6 @@ export default function Home() {
       console.error("Error removing user:", err);
     }
   }, []);
-
-  const updateLastActive = useCallback(async () => {
-    if (!isJoined) return;
-    try {
-      await api.patchUser(userIdRef.current, { lastActive: Date.now() });
-      console.log("Last active updated for user:", username);
-    } catch (err) {
-      console.error("Error updating last active:", err);
-    }
-  }, [isJoined, username]);
 
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => {
