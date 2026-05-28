@@ -44,10 +44,8 @@ export default function Home() {
   const [isJoined, setIsJoined] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
-  const [showUsers, setShowUsers] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
-  const presenceChannelRef = useRef<any>(null);
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Update user's last active time
@@ -95,6 +93,13 @@ export default function Home() {
           }
         });
       }
+      
+      // Sort users: current user first, then others alphabetically
+      activeUsers.sort((a, b) => {
+        if (a.id === userIdRef.current) return -1;
+        if (b.id === userIdRef.current) return 1;
+        return a.username.localeCompare(b.username);
+      });
       
       setOnlineUsers(activeUsers);
     } catch (error) {
@@ -192,6 +197,17 @@ export default function Home() {
     };
   }, [isJoined, registerUser, loadMessages, loadOnlineUsers, updateLastActive, removeUser]);
 
+  // Refresh online users every 10 seconds
+  useEffect(() => {
+    if (!isJoined) return;
+    
+    const interval = setInterval(() => {
+      loadOnlineUsers();
+    }, 10000);
+    
+    return () => clearInterval(interval);
+  }, [isJoined, loadOnlineUsers]);
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -205,44 +221,6 @@ export default function Home() {
     const pusher = new Pusher("bc4bbe143420c20c0e9d", {
       cluster: "ap1",
       authEndpoint: "/api/pusher-auth",
-    });
-
-    // Subscribe to presence channel for user online status
-    const presenceChannel = pusher.subscribe("presence-chat-channel");
-    presenceChannelRef.current = presenceChannel;
-    
-    presenceChannel.bind("pusher:subscription_succeeded", (members: any) => {
-      console.log("Presence channel subscribed, members:", members.count);
-      const users: User[] = [];
-      members.each((member: any) => {
-        users.push({
-          id: member.id,
-          username: member.info.username,
-          joinedAt: Date.now(),
-          lastActive: Date.now(),
-        });
-      });
-      setOnlineUsers(users);
-    });
-    
-    presenceChannel.bind("pusher:member_added", (member: any) => {
-      console.log("User joined:", member.info.username);
-      setOnlineUsers((prev) => {
-        if (!prev.some(u => u.id === member.id)) {
-          return [...prev, {
-            id: member.id,
-            username: member.info.username,
-            joinedAt: Date.now(),
-            lastActive: Date.now(),
-          }];
-        }
-        return prev;
-      });
-    });
-    
-    presenceChannel.bind("pusher:member_removed", (member: any) => {
-      console.log("User left:", member.info.username);
-      setOnlineUsers((prev) => prev.filter(u => u.id !== member.id));
     });
 
     const channel = pusher.subscribe("private-chat-channel");
@@ -263,10 +241,6 @@ export default function Home() {
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
-      if (presenceChannelRef.current) {
-        presenceChannelRef.current.unbind_all();
-        presenceChannelRef.current.unsubscribe();
-      }
       pusher.disconnect();
     };
   }, [isJoined]);
@@ -471,151 +445,147 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Image src="/next.svg" alt="Logo" width={100} height={25} />
             <h1 className="text-xl font-semibold text-gray-800">Real-time Chat</h1>
           </div>
-          <div className="flex items-center gap-4">
-            {/* Online Users Button */}
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600">Logged in as:</span>
+            <span className="font-medium text-gray-800">{username}</span>
             <button
-              onClick={() => setShowUsers(!showUsers)}
-              className="relative flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              onClick={() => setIsJoined(false)}
+              className="text-sm text-red-500 hover:text-red-600"
             >
-              <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-              <span className="text-sm font-medium text-gray-700">
-                {onlineUsers.length} online
-              </span>
+              Leave
             </button>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600">Logged in as:</span>
-              <span className="font-medium text-gray-800">{username}</span>
-              <button
-                onClick={() => setIsJoined(false)}
-                className="text-sm text-red-500 hover:text-red-600"
-              >
-                Leave
-              </button>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Online Users Sidebar */}
-      {showUsers && (
-        <div className="fixed right-4 top-20 w-72 bg-white rounded-xl shadow-lg border z-10">
-          <div className="p-4 border-b">
-            <div className="flex justify-between items-center">
-              <h3 className="font-semibold text-gray-800">Online Users ({onlineUsers.length})</h3>
-              <button
-                onClick={() => setShowUsers(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      {/* Main Content with Sidebar */}
+      <div className="max-w-6xl mx-auto p-4">
+        <div className="flex gap-4">
+          {/* Online Users Sidebar - Left */}
+          <div className="w-72 bg-white rounded-xl shadow-lg overflow-hidden flex-shrink-0">
+            <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
+              <div className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
-              </button>
+                <h3 className="font-semibold text-white">Active Now ({onlineUsers.length})</h3>
+              </div>
+            </div>
+            <div className="h-[calc(500px)] overflow-y-auto">
+              {onlineUsers.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  No active users
+                </div>
+              ) : (
+                onlineUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    className={`flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors border-b ${
+                      user.id === userIdRef.current ? "bg-blue-50" : ""
+                    }`}
+                  >
+                    <div className="relative">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
+                        user.id === userIdRef.current 
+                          ? "bg-gradient-to-br from-green-400 to-green-600"
+                          : "bg-gradient-to-br from-blue-400 to-indigo-500"
+                      }`}>
+                        {user.username.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-800">
+                        {user.username}
+                        {user.id === userIdRef.current && (
+                          <span className="ml-2 text-xs text-green-600">(You)</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Active now
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-          <div className="max-h-96 overflow-y-auto p-2">
-            {onlineUsers.map((user) => (
-              <div
-                key={user.id}
-                className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors"
-              >
-                <div className="relative">
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                    {user.username.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-800">{user.username}</p>
-                  <p className="text-xs text-gray-500">
-                    {user.id === userIdRef.current ? "You" : "Online"}
-                  </p>
-                </div>
-              </div>
-            ))}
-            {onlineUsers.length === 0 && (
-              <div className="text-center text-gray-500 py-4">
-                No other users online
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
-      <div className="max-w-4xl mx-auto p-4">
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="h-[500px] overflow-y-auto p-4 space-y-3">
-            {isLoading && (
-              <div className="text-center text-gray-500 mt-8">
-                Loading messages...
-              </div>
-            )}
-            {!isLoading && messages.length === 0 && (
-              <div className="text-center text-gray-500 mt-8">
-                No messages yet. Start the conversation!
-              </div>
-            )}
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${
-                  message.userId === userIdRef.current
-                    ? "justify-end"
-                    : "justify-start"
-                }`}
-              >
+          {/* Chat Area */}
+          <div className="flex-1 bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="h-[500px] overflow-y-auto p-4 space-y-3">
+              {isLoading && (
+                <div className="text-center text-gray-500 mt-8">
+                  Loading messages...
+                </div>
+              )}
+              {!isLoading && messages.length === 0 && (
+                <div className="text-center text-gray-500 mt-8">
+                  No messages yet. Start the conversation!
+                </div>
+              )}
+              {messages.map((message) => (
                 <div
-                  className={`max-w-[70%] rounded-lg p-3 ${
+                  key={message.id}
+                  className={`flex ${
                     message.userId === userIdRef.current
-                      ? "bg-blue-500 text-white"
-                      : "bg-gray-100 text-gray-800"
+                      ? "justify-end"
+                      : "justify-start"
                   }`}
                 >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-sm">
-                      {message.username}
-                    </span>
-                    <span className="text-xs opacity-75">
-                      {formatTime(message.timestamp)}
-                    </span>
-                  </div>
-                  <p className="break-words">{message.text}</p>
-                  {message.userId === userIdRef.current && message.status && (
-                    <div className="mt-1 flex justify-end">
-                      {getStatusIcon(message.status)}
+                  <div
+                    className={`max-w-[70%] rounded-lg p-3 ${
+                      message.userId === userIdRef.current
+                        ? "bg-blue-500 text-white"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold text-sm">
+                        {message.username}
+                      </span>
+                      <span className="text-xs opacity-75">
+                        {formatTime(message.timestamp)}
+                      </span>
                     </div>
-                  )}
+                    <p className="break-words">{message.text}</p>
+                    {message.userId === userIdRef.current && message.status && (
+                      <div className="mt-1 flex justify-end">
+                        {getStatusIcon(message.status)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <form onSubmit={sendMessage} className="border-t p-4">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Type a message..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                maxLength={500}
-              />
-              <button
-                type="submit"
-                className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium"
-              >
-                Send
-              </button>
+              ))}
+              <div ref={messagesEndRef} />
             </div>
-          </form>
+
+            <form onSubmit={sendMessage} className="border-t p-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  placeholder="Type a message..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  maxLength={500}
+                />
+                <button
+                  type="submit"
+                  className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                >
+                  Send
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>
