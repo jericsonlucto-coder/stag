@@ -25,7 +25,7 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 };
 
-const FIREBASE_DB_URL = "https://your-project-default-rtdb.firebaseio.com";
+const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
