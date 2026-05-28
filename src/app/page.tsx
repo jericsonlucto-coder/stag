@@ -330,7 +330,7 @@ function MessageBubble({
         </div>
         {/* Reactions Display - Outside bubble, overlapping at bottom */}
         {uniqueReactions.length > 0 && (
-          <div className={`absolute -bottom-1 ${isOwn ? "right-0" : "left-0"} z-5`}>
+          <div className={`absolute -bottom-4 ${isOwn ? "right-0" : "left-0"} z-5`}>
             <ReactionDisplay
               reactions={message.reactions}
               userId={currentUserId}
