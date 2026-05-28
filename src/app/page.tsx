@@ -98,6 +98,9 @@ const api = {
     if (startAfter) url += `&startAfter="${startAfter}"`;
     return fetch(url);
   },
+  getMessagesBefore: (endBefore: string, limit: number) => {
+    return fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${endBefore}"&limitToLast=${limit}`);
+  },
   getUsers: () => fetch(`${FIREBASE_DB_URL}/users.json`),
   putUser: (userId: string, data: object) =>
     fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, {
@@ -381,6 +384,7 @@ export default function Home() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
@@ -407,28 +411,24 @@ export default function Home() {
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
     
     setIsUserScrolled(!isNearBottom);
+    setShowScrollButton(!isNearBottom && scrollHeight > clientHeight);
     
     // Reset new message count when user scrolls to bottom
     if (isNearBottom && newMessageCount > 0) {
       setNewMessageCount(0);
     }
-    
-    // Load more messages when scrolling near top
-    if (scrollTop < 100 && !isLoadingMore && hasMoreMessages) {
-      loadMoreMessages();
-    }
   };
 
   // ── Load More Messages ───────────────────────────────────
   const loadMoreMessages = async () => {
-    if (isLoadingMore || !hasMoreMessages) return;
+    if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
     
     setIsLoadingMore(true);
     try {
       const oldestMessage = messages[0];
       if (!oldestMessage) return;
       
-      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessage.id}"&limitToLast=${MESSAGES_PER_PAGE}`);
+      const res = await api.getMessagesBefore(oldestMessage.id, MESSAGES_PER_PAGE);
       const data: Record<string, FirebaseMessage> = await res.json();
       
       const olderMessages: Message[] = Object.entries(data || {})
@@ -444,21 +444,23 @@ export default function Home() {
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
-      if (olderMessages.length < MESSAGES_PER_PAGE) {
+      if (olderMessages.length === 0 || olderMessages.length < MESSAGES_PER_PAGE) {
         setHasMoreMessages(false);
       }
       
       if (olderMessages.length > 0) {
+        // Save scroll position before adding messages
+        const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
+        const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
+        
         setMessages(prev => [...olderMessages, ...prev]);
         
-        // Maintain scroll position
+        // Restore scroll position after messages are added
         setTimeout(() => {
-          if (messagesContainerRef.current && olderMessages.length > 0) {
-            const firstNewMessage = document.getElementById(`msg-${olderMessages[0].id}`);
-            if (firstNewMessage) {
-              const offset = firstNewMessage.getBoundingClientRect().top - messagesContainerRef.current.getBoundingClientRect().top;
-              messagesContainerRef.current.scrollTop = offset - 50;
-            }
+          if (messagesContainerRef.current) {
+            const newScrollHeight = messagesContainerRef.current.scrollHeight;
+            const heightDifference = newScrollHeight - scrollHeightBefore;
+            messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
           }
         }, 100);
       }
@@ -498,6 +500,11 @@ export default function Home() {
       }
       
       setMessages(loaded);
+      
+      // Scroll to bottom after initial load
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 100);
     } catch (err) {
       console.error("Error loading messages:", err);
     } finally {
@@ -589,7 +596,7 @@ export default function Home() {
 
   // Auto-scroll to bottom only when user hasn't manually scrolled up
   useEffect(() => {
-    if (!isUserScrolled && messagesEndRef.current) {
+    if (!isUserScrolled && messagesEndRef.current && messages.length > 0) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isUserScrolled]);
@@ -683,6 +690,7 @@ export default function Home() {
   const scrollToBottom = () => {
     setNewMessageCount(0);
     setIsUserScrolled(false);
+    setShowScrollButton(false);
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -724,6 +732,7 @@ export default function Home() {
     
     // Auto-scroll to bottom when sending a new message
     setIsUserScrolled(false);
+    setShowScrollButton(false);
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
@@ -901,14 +910,46 @@ export default function Home() {
 
               {/* Chat Area */}
               <div className="flex-1 flex flex-col h-full relative">
-                {/* Loading More Indicator */}
-                {isLoadingMore && (
-                  <div className="absolute top-0 left-0 right-0 bg-blue-100 text-blue-600 text-center py-1 text-xs z-10">
-                    Loading older messages...
+                {/* Load More Button */}
+                {hasMoreMessages && !isLoading && messages.length > 0 && (
+                  <div className="sticky top-0 z-10 p-2 flex justify-center">
+                    <button
+                      onClick={loadMoreMessages}
+                      disabled={isLoadingMore}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 shadow-md"
+                    >
+                      {isLoadingMore ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                          Load More Messages
+                        </>
+                      )}
+                    </button>
                   </div>
                 )}
                 
                 {/* New Message Button */}
+                {showScrollButton && newMessageCount === 0 && (
+                  <button
+                    onClick={scrollToBottom}
+                    className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full p-2 shadow-lg hover:bg-blue-600 transition-colors z-10"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                  </button>
+                )}
+                
                 {newMessageCount > 0 && (
                   <button
                     onClick={scrollToBottom}
