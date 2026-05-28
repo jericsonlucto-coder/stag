@@ -813,8 +813,8 @@ const sendImageMessage = async (imageUrl: string) => {
     console.log("📡 Image API response status:", res.status);
     
     if (res.ok) {
-      const responseData = await res.json();
-      console.log("✅ Image sent successfully, Firebase ID:", responseData.firebaseId);
+      const responseData = await res.json() as { firebaseId?: string; success?: boolean };
+      console.log("✅ Image sent successfully, Firebase ID:", responseData?.firebaseId);
       // Don't update status to delivered - let Pusher handle it
     } else {
       const errorText = await res.text();
