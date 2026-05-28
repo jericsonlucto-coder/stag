@@ -773,7 +773,7 @@ const loadMessages = useCallback(async () => {
     }
   };
   
-const sendImageMessage = async (imageUrl: string) => {
+ const sendImageMessage = async (imageUrl: string) => {
   const messageId = generateId();
   const newMessage: Message = {
     id: messageId,
@@ -794,7 +794,7 @@ const sendImageMessage = async (imageUrl: string) => {
       prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
     );
   
-  // Add message to UI immediately (optimistic update)
+  // Add message to UI immediately
   setMessages((prev) => {
     if (prev.some((m) => m.id === messageId)) return prev;
     return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
@@ -803,15 +803,15 @@ const sendImageMessage = async (imageUrl: string) => {
   try {
     updateStatus("sent");
     const res = await api.sendMessage(newMessage);
-    console.log("Image message API response status:", res.status);
+    console.log("Image message API response:", res);
     
     if (res.ok) {
-      const responseData = await res.json() as { firebaseId?: string; success?: boolean };
-      console.log("Image sent successfully, Firebase ID:", responseData?.firebaseId);
-      // Don't update status to delivered - let Pusher handle it
+      const responseData = await res.json();
+      console.log("Image sent successfully:", responseData);
+      updateStatus("delivered");
+      setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
     } else {
-      const errorText = await res.text();
-      console.error("Failed to send image message:", errorText);
+      console.error("Failed to send image message:", await res.text());
       updateStatus("error");
     }
   } catch (err) {
@@ -825,6 +825,7 @@ const sendImageMessage = async (imageUrl: string) => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, 100);
 };
+
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => {
     if (!isJoined) return;
@@ -887,53 +888,26 @@ const sendImageMessage = async (imageUrl: string) => {
       authEndpoint: "/api/pusher-auth",
     });
     const channel = pusher.subscribe("private-chat-channel");
-channel.bind("new-message", (data: Message) => {
-  console.log("New message received via Pusher - full data:", JSON.stringify(data, null, 2));
-  console.log("Is image message?", data.isImage);
-  console.log("Image URL:", data.imageUrl?.substring(0, 100));
-  
+    channel.bind("new-message", (data: Message) => {
+  console.log("New message received via Pusher:", data);
   setMessages((prev) => {
-    // Check if message already exists by ID
-    const existingMessageIndex = prev.findIndex((m) => m.id === data.id);
-    
-    if (existingMessageIndex !== -1) {
-      // Message exists, just update its status if needed
-      console.log("Message already exists, updating status only:", data.id);
-      const updatedMessages = [...prev];
-      if (updatedMessages[existingMessageIndex].status !== "delivered") {
-        updatedMessages[existingMessageIndex] = {
-          ...updatedMessages[existingMessageIndex],
-          status: "delivered" as MessageStatus,
-        };
-      }
-      return updatedMessages;
-    }
+    if (prev.some((m) => m.id === data.id)) return prev;
     
     // Ensure the message has all required fields
-    const newMessage: Message = {
-      id: data.id,
-      text: data.text || "",
-      username: data.username,
-      timestamp: data.timestamp,
-      userId: data.userId,
+    const newMessage = {
+      ...data,
       status: "delivered" as MessageStatus,
-      reactions: data.reactions || [],
-      isImage: data.isImage === true,
-      imageUrl: data.imageUrl,
+      isImage: data.isImage || false,
+      imageUrl: data.imageUrl || undefined,
     };
     
-    console.log("Adding new message to UI:", {
-      id: newMessage.id,
-      isImage: newMessage.isImage,
-      hasImageUrl: !!newMessage.imageUrl,
-    });
-    
+    console.log("Adding new message to UI:", newMessage);
     const newMessages = [...prev, newMessage].sort(
       (a, b) => a.timestamp - b.timestamp
     );
     
     if (isUserScrolled) {
-      setNewMessageCount(prevCount => prevCount + 1);
+      setNewMessageCount(prev => prev + 1);
     }
     
     return newMessages;
@@ -1011,55 +985,52 @@ channel.bind("new-message", (data: Message) => {
     updateUserActivity();
   };
 
- const sendMessage = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!inputMessage.trim() || !username) return;
-  
-  updateUserActivity();
-  await updateLastActive();
-  
-  const messageId = generateId();
-  const newMessage: Message = {
-    id: messageId,
-    text: inputMessage,
-    username,
-    timestamp: Date.now(),
-    userId: userIdRef.current,
-    status: "sending",
-    reactions: [],
-  };
-  setInputMessage("");
-  const updateStatus = (status: MessageStatus | undefined) =>
-    setMessages((prev) =>
-      prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
-    );
-  
-  // Add optimistic update
-  setMessages((prev) => {
-    if (prev.some((m) => m.id === messageId)) return prev;
-    return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-  });
-  
-  try {
-    updateStatus("sent");
-    const res = await api.sendMessage(newMessage);
-    if (res.ok) {
-      // Don't update to delivered - let Pusher handle it
-      // This prevents double messages
-    } else {
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputMessage.trim() || !username) return;
+    
+    updateUserActivity();
+    await updateLastActive();
+    
+    const messageId = generateId();
+    const newMessage: Message = {
+      id: messageId,
+      text: inputMessage,
+      username,
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+    };
+    setInputMessage("");
+    const updateStatus = (status: MessageStatus | undefined) =>
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+      );
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === messageId)) return prev;
+      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+    });
+    try {
+      updateStatus("sent");
+      const res = await api.sendMessage(newMessage);
+      if (res.ok) {
+        updateStatus("delivered");
+        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+      } else {
+        updateStatus("error");
+      }
+    } catch (err) {
+      console.error("Error sending message:", err);
       updateStatus("error");
     }
-  } catch (err) {
-    console.error("Error sending message:", err);
-    updateStatus("error");
-  }
-  
-  setIsUserScrolled(false);
-  setShowScrollButton(false);
-  setTimeout(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, 100);
-};
+    
+    setIsUserScrolled(false);
+    setShowScrollButton(false);
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
 
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
