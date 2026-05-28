@@ -285,53 +285,98 @@ export default function Home() {
   }, [isJoined]);
 
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
-    const reaction: Reaction = {
-      type: reactionType,
-      userId: userIdRef.current,
-      username: username,
-      timestamp: Date.now(),
-    };
-
-    // Optimistically update UI
-    setMessages((prevMessages: Message[]) =>
-      prevMessages.map((msg) =>
-        msg.id === messageId
-          ? {
-              ...msg,
-              reactions: [...(msg.reactions || []), reaction],
-            }
-          : msg
-      )
+    const message = messages.find(m => m.id === messageId);
+    
+    // Check if user already reacted with this emoji
+    const hasReacted = message?.reactions?.some(
+      r => r.userId === userIdRef.current && r.type === reactionType
     );
-
-    // Save reaction to Firebase
-    try {
-      const message = messages.find(m => m.id === messageId);
+    
+    if (hasReacted) {
+      // Remove reaction if already exists
+      const updatedReactions = message?.reactions?.filter(
+        r => !(r.userId === userIdRef.current && r.type === reactionType)
+      ) || [];
+      
+      // Update UI optimistically
+      setMessages((prevMessages: Message[]) =>
+        prevMessages.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, reactions: updatedReactions }
+            : msg
+        )
+      );
+      
+      // Save to Firebase
+      try {
+        await fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updatedReactions),
+        });
+        
+        // Trigger Pusher event for reaction removal
+        await fetch("/api/send-reaction", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messageId,
+            reaction: { ...reactionType, remove: true },
+          }),
+        });
+      } catch (error) {
+        console.error("Error removing reaction:", error);
+      }
+    } else {
+      // Add new reaction
+      const reaction: Reaction = {
+        type: reactionType,
+        userId: userIdRef.current,
+        username: username,
+        timestamp: Date.now(),
+      };
+      
       const updatedReactions = [...(message?.reactions || []), reaction];
       
-      await fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updatedReactions),
-      });
-
-      // Trigger Pusher event for real-time reaction update
-      await fetch("/api/send-reaction", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messageId,
-          reaction,
-        }),
-      });
-    } catch (error) {
-      console.error("Error adding reaction:", error);
+      // Update UI optimistically
+      setMessages((prevMessages: Message[]) =>
+        prevMessages.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, reactions: updatedReactions }
+            : msg
+        )
+      );
+      
+      // Save to Firebase
+      try {
+        await fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updatedReactions),
+        });
+        
+        // Trigger Pusher event for real-time reaction update
+        await fetch("/api/send-reaction", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messageId,
+            reaction,
+          }),
+        });
+      } catch (error) {
+        console.error("Error adding reaction:", error);
+      }
     }
-
+    
     setHoveredMessageId(null);
   };
 
@@ -354,6 +399,10 @@ export default function Home() {
     return Array.from(unique.values());
   };
 
+  const hasUserReacted = (reactions: Reaction[] | undefined, reactionType: ReactionType) => {
+    return reactions?.some(r => r.userId === userIdRef.current && r.type === reactionType);
+  };
+
   const handleMouseEnter = (messageId: string) => {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
@@ -364,7 +413,7 @@ export default function Home() {
   const handleMouseLeave = () => {
     hoverTimeoutRef.current = setTimeout(() => {
       setHoveredMessageId(null);
-    }, 300);
+    }, 200);
   };
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -652,48 +701,58 @@ export default function Home() {
                       message.userId === userIdRef.current
                         ? "justify-end"
                         : "justify-start"
-                    } relative mb-4`}
-                    onMouseEnter={() => handleMouseEnter(message.id)}
-                    onMouseLeave={handleMouseLeave}
+                    } relative mb-6`}
                   >
-                    {/* Reaction Picker - Shows on hover at the top of message */}
-                    {isHovered && (
-                      <div className={`absolute -top-12 ${message.userId === userIdRef.current ? "right-0" : "left-0"} bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20`}>
-                        {REACTIONS.map((reaction) => (
-                          <button
-                            key={reaction}
-                            onClick={() => addReaction(message.id, reaction)}
-                            className="hover:bg-gray-100 p-2 rounded transition-colors text-xl"
-                          >
-                            {reaction}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    
-                    {/* Message Bubble */}
+                    {/* Message Bubble with hover detection */}
                     <div
-                      className={`max-w-[70%] rounded-lg p-3 ${
-                        message.userId === userIdRef.current
-                          ? "bg-blue-500 text-white"
-                          : "bg-gray-100 text-gray-800"
-                      }`}
+                      className="relative"
+                      onMouseEnter={() => handleMouseEnter(message.id)}
+                      onMouseLeave={handleMouseLeave}
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-sm">
-                          {message.username}
-                        </span>
-                        <span className="text-xs opacity-75">
-                          {formatTime(message.timestamp)}
-                        </span>
-                      </div>
-                      <p className="break-words">{message.text}</p>
-                      
-                      {message.userId === userIdRef.current && message.status && (
-                        <div className="mt-1 flex justify-end">
-                          {getStatusIcon(message.status)}
+                      {/* Reaction Picker - Shows on hover at the top of message */}
+                      {isHovered && (
+                        <div className={`absolute -top-12 ${message.userId === userIdRef.current ? "right-0" : "left-0"} bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20`}>
+                          {REACTIONS.map((reaction) => {
+                            const isActive = hasUserReacted(message.reactions, reaction);
+                            return (
+                              <button
+                                key={reaction}
+                                onClick={() => addReaction(message.id, reaction)}
+                                className={`hover:bg-gray-100 p-2 rounded transition-colors text-xl ${
+                                  isActive ? "bg-blue-100" : ""
+                                }`}
+                              >
+                                {reaction}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
+                      
+                      {/* Message Bubble */}
+                      <div
+                        className={`max-w-[70%] rounded-lg p-3 ${
+                          message.userId === userIdRef.current
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-sm">
+                            {message.username}
+                          </span>
+                          <span className="text-xs opacity-75">
+                            {formatTime(message.timestamp)}
+                          </span>
+                        </div>
+                        <p className="break-words">{message.text}</p>
+                        
+                        {message.userId === userIdRef.current && message.status && (
+                          <div className="mt-1 flex justify-end">
+                            {getStatusIcon(message.status)}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     
                     {/* Reactions Display - Below the message bubble */}
@@ -702,7 +761,9 @@ export default function Home() {
                         {uniqueReactions.map((reaction, idx) => (
                           <div
                             key={idx}
-                            className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm"
+                            className={`inline-flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm ${
+                              hasUserReacted(message.reactions, reaction.type) ? "border-blue-500 bg-blue-50" : ""
+                            }`}
                           >
                             <span>{reaction.type}</span>
                             <span className="text-xs text-gray-600">
