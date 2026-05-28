@@ -6,10 +6,9 @@ interface Message {
   username: string;
   timestamp: number;
   userId: string;
-}
-
-interface FirebaseResponse {
-  name: string;
+  imageUrl?: string;
+  isImage?: boolean;
+  reactions?: any[];
 }
 
 // Your Pusher credentials
@@ -52,22 +51,31 @@ export async function POST(request: Request) {
     const message: Message = await request.json();
     console.log("Received message to save:", message);
     
+    // Create the data to save to Firebase
+    const messageData: any = {
+      text: message.text || "",
+      username: message.username,
+      timestamp: message.timestamp,
+      userId: message.userId,
+      createdAt: new Date().toISOString(),
+    };
+    
+    // Include image data if present
+    if (message.isImage && message.imageUrl) {
+      messageData.isImage = true;
+      messageData.imageUrl = message.imageUrl;
+    }
+    
     // Save to Firebase Realtime Database
     const firebaseResponse = await fetch(`${FIREBASE_DB_URL}/messages.json`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        text: message.text,
-        username: message.username,
-        timestamp: message.timestamp,
-        userId: message.userId,
-        createdAt: new Date().toISOString()
-      }),
+      body: JSON.stringify(messageData),
     });
     
-    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
+    const firebaseResult = await firebaseResponse.json();
     console.log("Firebase save result:", firebaseResult);
     
     if (!firebaseResponse.ok) {
@@ -78,11 +86,16 @@ export async function POST(request: Request) {
       );
     }
     
-    // Create the payload for Pusher HTTP API
+    // Create the payload for Pusher HTTP API with full message data
+    const pusherMessage = {
+      ...message,
+      id: firebaseResult.name, // Use Firebase generated ID
+    };
+    
     const payload = {
       name: "new-message",
       channel: "private-chat-channel",
-      data: JSON.stringify(message)
+      data: JSON.stringify(pusherMessage)
     };
     
     const timestamp = Math.floor(Date.now() / 1000);
@@ -103,7 +116,6 @@ export async function POST(request: Request) {
     if (!pusherResponse.ok) {
       const errorText = await pusherResponse.text();
       console.error("Pusher API error:", errorText);
-      // Still return success since Firebase saved
       return NextResponse.json({ 
         success: true, 
         warning: "Saved to Firebase but Pusher notification failed",
