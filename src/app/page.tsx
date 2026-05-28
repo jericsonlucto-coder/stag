@@ -773,12 +773,12 @@ const loadMessages = useCallback(async () => {
     }
   };
   
- const sendImageMessage = async (imageUrl: string) => {
+const sendImageMessage = async (imageUrl: string) => {
   const messageId = generateId();
   const newMessage: Message = {
     id: messageId,
     text: "",
-    username,
+    username: username, // Make sure username is included
     timestamp: Date.now(),
     userId: userIdRef.current,
     status: "sending",
@@ -787,7 +787,7 @@ const loadMessages = useCallback(async () => {
     isImage: true,
   };
   
-  console.log("Sending image message:", newMessage);
+  console.log("Sending image message with username:", username);
   
   const updateStatus = (status: MessageStatus | undefined) =>
     setMessages((prev) =>
@@ -803,15 +803,13 @@ const loadMessages = useCallback(async () => {
   try {
     updateStatus("sent");
     const res = await api.sendMessage(newMessage);
-    console.log("Image message API response:", res);
+    console.log("Image message API response status:", res.status);
     
     if (res.ok) {
-      const responseData = await res.json();
-      console.log("Image sent successfully:", responseData);
-      updateStatus("delivered");
-      setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+      console.log("Image sent successfully");
+      // Let Pusher handle the delivered status
     } else {
-      console.error("Failed to send image message:", await res.text());
+      console.error("Failed to send image message");
       updateStatus("error");
     }
   } catch (err) {
@@ -881,63 +879,92 @@ const loadMessages = useCallback(async () => {
   }, [isJoined, updateLastActive, updateUserActivity]);
 
   // ── Pusher ────────────────────────────────────────────────
-  useEffect(() => {
-    if (!isJoined) return;
-    const pusher = new Pusher("bc4bbe143420c20c0e9d", {
-      cluster: "ap1",
-      authEndpoint: "/api/pusher-auth",
-    });
-    const channel = pusher.subscribe("private-chat-channel");
-    channel.bind("new-message", (data: Message) => {
-  console.log("New message received via Pusher:", data);
-  setMessages((prev) => {
-    if (prev.some((m) => m.id === data.id)) return prev;
-    
-    // Ensure the message has all required fields
-    const newMessage = {
-      ...data,
-      status: "delivered" as MessageStatus,
-      isImage: data.isImage || false,
-      imageUrl: data.imageUrl || undefined,
-    };
-    
-    console.log("Adding new message to UI:", newMessage);
-    const newMessages = [...prev, newMessage].sort(
-      (a, b) => a.timestamp - b.timestamp
-    );
-    
-    if (isUserScrolled) {
-      setNewMessageCount(prev => prev + 1);
-    }
-    
-    return newMessages;
+useEffect(() => {
+  if (!isJoined) return;
+  console.log("Initializing Pusher connection...");
+  
+  const pusher = new Pusher("bc4bbe143420c20c0e9d", {
+    cluster: "ap1",
+    authEndpoint: "/api/pusher-auth",
   });
-});
-    channel.bind(
-      "message-reaction",
-      (data: { messageId: string; reaction: Reaction | null }) => {
-        if (!data.reaction) return;
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== data.messageId) return msg;
-            const alreadyExists = msg.reactions?.some(
-              (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
-            );
-            if (alreadyExists) return msg;
-            return {
-              ...msg,
-              reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
-            };
-          })
-        );
+  
+  const channel = pusher.subscribe("private-chat-channel");
+  
+  channel.bind("new-message", (data: any) => {
+    console.log("🔔 New message received via Pusher:", data);
+    console.log("Message details - Username:", data.username, "IsImage:", data.isImage);
+    
+    setMessages((prev) => {
+      // Check if message already exists
+      const existingIndex = prev.findIndex((m) => m.id === data.id);
+      
+      if (existingIndex !== -1) {
+        // Update existing message status
+        console.log("Updating existing message status:", data.id);
+        const updated = [...prev];
+        if (updated[existingIndex].status !== "delivered") {
+          updated[existingIndex] = { ...updated[existingIndex], status: "delivered" };
+        }
+        return updated;
       }
+      
+      // Create new message with all fields
+      const newMessage: Message = {
+        id: data.id,
+        text: data.text || "",
+        username: data.username,
+        timestamp: data.timestamp,
+        userId: data.userId,
+        status: "delivered",
+        reactions: data.reactions || [],
+        isImage: data.isImage === true,
+        imageUrl: data.imageUrl,
+      };
+      
+      console.log("✅ Adding new message to UI:", { 
+        id: newMessage.id, 
+        username: newMessage.username,
+        isImage: newMessage.isImage,
+        hasImage: !!newMessage.imageUrl
+      });
+      
+      const newMessages = [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+      
+      if (isUserScrolled) {
+        setNewMessageCount((prevCount) => prevCount + 1);
+      } else {
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
+      
+      return newMessages;
+    });
+  });
+  
+  channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction | null }) => {
+    if (!data.reaction) return;
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== data.messageId) return msg;
+        const alreadyExists = msg.reactions?.some(
+          (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
+        );
+        if (alreadyExists) return msg;
+        return {
+          ...msg,
+          reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
+        };
+      })
     );
-    return () => {
-      channel.unbind_all();
-      channel.unsubscribe();
-      pusher.disconnect();
-    };
-  }, [isJoined, isUserScrolled]);
+  });
+  
+  return () => {
+    channel.unbind_all();
+    channel.unsubscribe();
+    pusher.disconnect();
+  };
+}, [isJoined, isUserScrolled]);
 
   // ── Actions ───────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
@@ -985,52 +1012,58 @@ const loadMessages = useCallback(async () => {
     updateUserActivity();
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputMessage.trim() || !username) return;
-    
-    updateUserActivity();
-    await updateLastActive();
-    
-    const messageId = generateId();
-    const newMessage: Message = {
-      id: messageId,
-      text: inputMessage,
-      username,
-      timestamp: Date.now(),
-      userId: userIdRef.current,
-      status: "sending",
-      reactions: [],
-    };
-    setInputMessage("");
-    const updateStatus = (status: MessageStatus | undefined) =>
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
-      );
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === messageId)) return prev;
-      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-    });
-    try {
-      updateStatus("sent");
-      const res = await api.sendMessage(newMessage);
-      if (res.ok) {
-        updateStatus("delivered");
-        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
-      } else {
-        updateStatus("error");
-      }
-    } catch (err) {
-      console.error("Error sending message:", err);
+const sendMessage = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!inputMessage.trim() || !username) return;
+  
+  updateUserActivity();
+  await updateLastActive();
+  
+  const messageId = generateId();
+  const newMessage: Message = {
+    id: messageId,
+    text: inputMessage,
+    username: username, // Make sure username is included
+    timestamp: Date.now(),
+    userId: userIdRef.current,
+    status: "sending",
+    reactions: [],
+  };
+  
+  console.log("Sending message with username:", username);
+  
+  setInputMessage("");
+  const updateStatus = (status: MessageStatus | undefined) =>
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+    );
+  
+  // Add optimistic update
+  setMessages((prev) => {
+    if (prev.some((m) => m.id === messageId)) return prev;
+    return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+  });
+  
+  try {
+    updateStatus("sent");
+    const res = await api.sendMessage(newMessage);
+    if (res.ok) {
+      // Let Pusher handle the delivered status
+      console.log("Message sent successfully");
+    } else {
       updateStatus("error");
     }
-    
-    setIsUserScrolled(false);
-    setShowScrollButton(false);
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-  };
+  } catch (err) {
+    console.error("Error sending message:", err);
+    updateStatus("error");
+  }
+  
+  setIsUserScrolled(false);
+  setShowScrollButton(false);
+  setTimeout(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, 100);
+};
 
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
