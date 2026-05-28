@@ -1,10 +1,34 @@
 import { NextResponse } from "next/server";
 
 // Your Pusher credentials
-const PUSHER_APP_ID = process.env.PUSHER_APP_ID || "2159204";
-const PUSHER_KEY = process.env.PUSHER_KEY || "bc4bbe143420c20c0e9d";
-const PUSHER_SECRET = process.env.PUSHER_SECRET || "bbd18207d17c2f39529e";
-const PUSHER_CLUSTER = process.env.PUSHER_CLUSTER || "ap1";
+const PUSHER_APP_ID = "2159204";
+const PUSHER_KEY = "bc4bbe143420c20c0e9d";
+const PUSHER_SECRET = "bbd18207d17c2f39529e";
+const PUSHER_CLUSTER = "ap1";
+
+// Your Firebase Realtime Database URL (get from Firebase Console)
+const FIREBASE_DB_URL = "https://your-project-default-rtdb.firebaseio.com";
+
+async function getPusherAuthSignature(socketId: string, channelName: string, appSecret: string, appKey: string) {
+  const stringToSign = `${socketId}:${channelName}`;
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(appSecret);
+  const msgData = encoder.encode(stringToSign);
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", 
+    keyData, 
+    { name: "HMAC", hash: "SHA-256" }, 
+    false, 
+    ["sign"]
+  );
+
+  const signatureBuffer = await crypto.subtle.sign("HMAC", cryptoKey, msgData);
+  const signatureArray = Array.from(new Uint8Array(signatureBuffer));
+  const signatureHex = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return `${appKey}:${signatureHex}`;
+}
 
 async function getSignature(secret: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -36,23 +60,18 @@ export async function POST(request: Request) {
   try {
     const message = await request.json();
     
-    // Save to Firebase using REST API (since Cloudflare Workers don't support Firebase Admin)
-    const firebaseUrl = `https://firestore.googleapis.com/v1/projects/${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}/databases/(default)/documents/messages`;
-    
-    const firebaseResponse = await fetch(firebaseUrl, {
+    // Save to Firebase Realtime Database
+    const firebaseResponse = await fetch(`${FIREBASE_DB_URL}/messages.json`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.FIREBASE_ACCESS_TOKEN}`,
       },
       body: JSON.stringify({
-        fields: {
-          text: { stringValue: message.text },
-          username: { stringValue: message.username },
-          timestamp: { integerValue: message.timestamp },
-          userId: { stringValue: message.userId },
-          createdAt: { stringValue: new Date().toISOString() }
-        }
+        text: message.text,
+        username: message.username,
+        timestamp: message.timestamp,
+        userId: message.userId,
+        createdAt: new Date().toISOString()
       }),
     });
     
