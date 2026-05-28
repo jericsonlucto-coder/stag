@@ -689,9 +689,9 @@ export default function Home() {
 
   // ── Chat Screen ───────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header - Full width at top */}
-      <div className="bg-white shadow-sm border-b">
+      <div className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="px-4 py-3 flex justify-between items-center max-w-[70%] mx-auto">
           <div className="flex items-center gap-2 sm:gap-3">
             <Image src="/next.svg" alt="Logo" width={60} height={15} className="sm:w-[70px]" />
@@ -730,12 +730,12 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Chat Container - 70% width */}
-      <div className="flex items-center justify-center py-6 px-4">
-        <div className="w-full max-w-[70%]">
+      {/* Chat Container - Full height minus header */}
+      <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
+        <div className="w-full max-w-[70%] h-full">
           {/* Main Content with Shadow */}
-          <div className="bg-white rounded-xl shadow-xl overflow-hidden">
-            <div className="flex flex-col lg:flex-row">
+          <div className="bg-white rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
+            <div className="flex flex-col lg:flex-row h-full">
               {/* Mobile Sidebar Overlay */}
               {isMobileMenuOpen && (
                 <div
@@ -773,7 +773,7 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-                <div className="h-96 lg:h-[500px] overflow-y-auto">
+                <div className="flex-1 overflow-y-auto h-[calc(100%-57px)]">
                   {onlineUsers.length === 0 ? (
                     <p className="text-center text-gray-500 py-8 text-sm">No active users</p>
                   ) : (
@@ -789,8 +789,8 @@ export default function Home() {
               </div>
 
               {/* Chat Area */}
-              <div className="flex-1 flex flex-col">
-                <div className="h-96 lg:h-[500px] overflow-y-auto p-3 space-y-3">
+              <div className="flex-1 flex flex-col h-full">
+                <div className="flex-1 overflow-y-auto p-3 space-y-3">
                   {isLoading && (
                     <p className="text-center text-gray-500 mt-8 text-sm">
                       Loading messages...
@@ -816,7 +816,7 @@ export default function Home() {
                 </div>
 
                 {/* Input Area with top border */}
-                <div className="border-t p-3">
+                <div className="border-t p-3 flex-shrink-0">
                   <form onSubmit={sendMessage}>
                     <div className="flex gap-2">
                       <input
