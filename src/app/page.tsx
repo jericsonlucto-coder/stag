@@ -325,7 +325,7 @@ export default function Home() {
           },
           body: JSON.stringify({
             messageId,
-            reaction: { ...reactionType, remove: true },
+            reaction: null, // Send null to indicate removal
           }),
         });
       } catch (error) {
