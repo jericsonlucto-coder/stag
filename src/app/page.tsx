@@ -48,7 +48,7 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
   const presenceChannelRef = useRef<any>(null);
-  const userHeartbeatRef = useRef<NodeJS.Timeout>();
+  const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Update user's last active time
   const updateLastActive = useCallback(async () => {
