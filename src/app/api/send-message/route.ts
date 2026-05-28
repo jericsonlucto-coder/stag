@@ -53,7 +53,12 @@ async function getMD5(str: string): Promise<string> {
 export async function POST(request: Request) {
   try {
     const message: Message = await request.json();
-    console.log("Received message to save:", { ...message, imageUrl: message.imageUrl ? "present" : "none" });
+    console.log("📨 Received message to save:", { 
+      username: message.username, 
+      isImage: message.isImage,
+      hasImageUrl: !!message.imageUrl,
+      text: message.text?.substring(0, 50)
+    });
     
     // Create the data to save to Firebase
     const messageData: any = {
@@ -68,7 +73,7 @@ export async function POST(request: Request) {
     if (message.isImage && message.imageUrl) {
       messageData.isImage = true;
       messageData.imageUrl = message.imageUrl;
-      console.log("Saving image message to Firebase");
+      console.log("🖼️ Saving image message to Firebase");
     }
     
     // Save to Firebase Realtime Database
@@ -81,7 +86,7 @@ export async function POST(request: Request) {
     });
     
     const firebaseResult: FirebaseResponse = await firebaseResponse.json();
-    console.log("Firebase save result:", firebaseResult);
+    console.log("💾 Firebase save result:", firebaseResult.name);
     
     if (!firebaseResponse.ok) {
       console.error("Firebase save error:", firebaseResult);
@@ -103,7 +108,7 @@ export async function POST(request: Request) {
       reactions: message.reactions || [],
     };
     
-    console.log("Broadcasting to Pusher:", { 
+    console.log("📡 Broadcasting to Pusher:", { 
       id: pusherMessage.id, 
       username: pusherMessage.username, 
       isImage: pusherMessage.isImage,
@@ -142,7 +147,7 @@ export async function POST(request: Request) {
     }
     
     const pusherResult = await pusherResponse.json();
-    console.log("Pusher send result:", pusherResult);
+    console.log("✅ Pusher send result:", pusherResult);
     
     return NextResponse.json({ 
       success: true, 
