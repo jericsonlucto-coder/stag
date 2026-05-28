@@ -803,15 +803,15 @@ const sendImageMessage = async (imageUrl: string) => {
   try {
     updateStatus("sent");
     const res = await api.sendMessage(newMessage);
-    console.log("Image message API response:", res);
+    console.log("Image message API response status:", res.status);
     
     if (res.ok) {
       const responseData = await res.json();
-      console.log("Image sent successfully:", responseData);
+      console.log("Image sent successfully, Firebase ID:", responseData.firebaseId);
       // Don't update status to delivered - let Pusher handle it
-      // This prevents the double message issue
     } else {
-      console.error("Failed to send image message:", await res.text());
+      const errorText = await res.text();
+      console.error("Failed to send image message:", errorText);
       updateStatus("error");
     }
   } catch (err) {
@@ -889,7 +889,10 @@ const sendImageMessage = async (imageUrl: string) => {
     });
     const channel = pusher.subscribe("private-chat-channel");
 channel.bind("new-message", (data: Message) => {
-  console.log("New message received via Pusher:", data);
+  console.log("New message received via Pusher - full data:", JSON.stringify(data, null, 2));
+  console.log("Is image message?", data.isImage);
+  console.log("Image URL:", data.imageUrl?.substring(0, 100));
+  
   setMessages((prev) => {
     // Check if message already exists by ID
     const existingMessageIndex = prev.findIndex((m) => m.id === data.id);
@@ -908,14 +911,24 @@ channel.bind("new-message", (data: Message) => {
     }
     
     // Ensure the message has all required fields
-    const newMessage = {
-      ...data,
+    const newMessage: Message = {
+      id: data.id,
+      text: data.text || "",
+      username: data.username,
+      timestamp: data.timestamp,
+      userId: data.userId,
       status: "delivered" as MessageStatus,
-      isImage: data.isImage || false,
-      imageUrl: data.imageUrl || undefined,
+      reactions: data.reactions || [],
+      isImage: data.isImage === true,
+      imageUrl: data.imageUrl,
     };
     
-    console.log("Adding new message to UI:", newMessage);
+    console.log("Adding new message to UI:", {
+      id: newMessage.id,
+      isImage: newMessage.isImage,
+      hasImageUrl: !!newMessage.imageUrl,
+    });
+    
     const newMessages = [...prev, newMessage].sort(
       (a, b) => a.timestamp - b.timestamp
     );
