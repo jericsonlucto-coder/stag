@@ -147,15 +147,18 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId, reaction }),
     }),
-  uploadImage: async (file: File): Promise<{ url: string }> => {
+  uploadImage: async (file: File): Promise<{ url: string; success: boolean }> => {
     const formData = new FormData();
     formData.append("image", file);
     const res = await fetch("/api/upload-image", {
       method: "POST",
       body: formData,
     });
-    const data = await res.json() as { url: string };
-    return { url: data.url };
+    const data = await res.json() as { url: string; success: boolean; error?: string };
+    if (!data.success) {
+      throw new Error(data.error || "Upload failed");
+    }
+    return { url: data.url, success: true };
   },
 };
 
@@ -344,6 +347,17 @@ function MessageBubble({
                 alt="Shared image"
                 className="max-w-full rounded-lg max-h-64 object-cover cursor-pointer"
                 onClick={() => window.open(message.imageUrl, '_blank')}
+                onError={(e) => {
+                  console.error("Image failed to load:", message.imageUrl);
+                  e.currentTarget.style.display = 'none';
+                  const parent = e.currentTarget.parentElement;
+                  if (parent) {
+                    const errorText = document.createElement('p');
+                    errorText.textContent = 'Failed to load image';
+                    errorText.className = 'text-red-500 text-xs';
+                    parent.appendChild(errorText);
+                  }
+                }}
               />
             </div>
           ) : (
@@ -689,19 +703,16 @@ export default function Home() {
     }
   }, []);
 
-  // ── Image Upload Handler ─────────────────────────────────
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
+  // ── Image Upload Handler (with paste support) ─────────────────────────────────
+  const handleImageUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('Please select an image file');
-      return;
+      return false;
     }
     
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Image size should be less than 5MB');
-      return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image size should be less than 2MB');
+      return false;
     }
     
     setIsUploading(true);
@@ -710,17 +721,45 @@ export default function Home() {
       const { url } = await api.uploadImage(file);
       if (url) {
         await sendImageMessage(url);
+        return true;
       }
+      return false;
     } catch (error) {
       console.error("Error uploading image:", error);
       alert("Failed to upload image");
+      return false;
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     }
   };
+  
+  // Handle paste event for images
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        e.preventDefault();
+        const file = items[i].getAsFile();
+        if (file) {
+          await handleImageUpload(file);
+        }
+        break;
+      }
+    }
+  }, []);
+  
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await handleImageUpload(file);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+  
   const sendImageMessage = async (imageUrl: string) => {
     const messageId = generateId();
     const newMessage: Message = {
@@ -1237,13 +1276,15 @@ export default function Home() {
                         onChange={(e) => setInputMessage(e.target.value)}
                         onFocus={updateUserActivity}
                         onClick={updateUserActivity}
-                        placeholder="Type a message..."
+                        onPaste={handlePaste}
+                        placeholder="Type a message or paste an image..."
                         className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm"
                         maxLength={500}
                       />
                       <button
                         type="submit"
                         className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm"
+                        disabled={isUploading}
                       >
                         Send
                       </button>
@@ -1252,7 +1293,7 @@ export default function Home() {
                       <input
                         type="file"
                         ref={fileInputRef}
-                        onChange={handleImageUpload}
+                        onChange={handleFileSelect}
                         accept="image/*"
                         className="hidden"
                         id="image-upload"
