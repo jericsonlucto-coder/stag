@@ -290,8 +290,10 @@ function MessageBubble({
 }) {
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
+  const hasReactions = uniqueReactions.length > 0;
+  
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-4 sm:mb-5`}>
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} ${hasReactions ? 'mb-6 sm:mb-7' : 'mb-2 sm:mb-3'}`}>
       <div
         className="relative max-w-[90%] sm:max-w-[75%] md:max-w-[65%]"
         onMouseEnter={onMouseEnter}
@@ -329,7 +331,7 @@ function MessageBubble({
           )}
         </div>
         {/* Reactions Display - Positioned below bubble, only 1/4 overlaps */}
-        {uniqueReactions.length > 0 && (
+        {hasReactions && (
           <div className={`absolute -bottom-3 ${isOwn ? "right-0" : "left-0"} z-5`}>
             <div className="translate-y-2">
               <ReactionDisplay
