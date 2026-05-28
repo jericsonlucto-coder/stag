@@ -147,14 +147,15 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId, reaction }),
     }),
-  uploadImage: async (file: File) => {
+  uploadImage: async (file: File): Promise<{ url: string }> => {
     const formData = new FormData();
     formData.append("image", file);
     const res = await fetch("/api/upload-image", {
       method: "POST",
       body: formData,
     });
-    return res.json();
+    const data = await res.json();
+    return { url: data.url };
   },
 };
 
@@ -706,9 +707,9 @@ export default function Home() {
     setIsUploading(true);
     
     try {
-      const result = await api.uploadImage(file);
-      if (result.url) {
-        await sendImageMessage(result.url);
+      const { url } = await api.uploadImage(file);
+      if (url) {
+        await sendImageMessage(url);
       }
     } catch (error) {
       console.error("Error uploading image:", error);
@@ -720,7 +721,6 @@ export default function Home() {
       }
     }
   };
-  
   const sendImageMessage = async (imageUrl: string) => {
     const messageId = generateId();
     const newMessage: Message = {
