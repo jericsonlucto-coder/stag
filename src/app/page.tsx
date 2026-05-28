@@ -260,8 +260,8 @@ function ReactionDisplay({
         return (
           <div
             key={idx}
-            className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
-              isActive ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white"
+            className={`inline-flex items-center gap-0.5 bg-white/95 backdrop-blur-sm border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
+              isActive ? "border-blue-500 bg-blue-100" : "border-gray-300 bg-white/95"
             }`}
           >
             <span className="text-[10px] sm:text-sm">{reaction.type}</span>
@@ -291,7 +291,7 @@ function MessageBubble({
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-2 sm:mb-3`}>
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-4 sm:mb-5`}>
       <div
         className="relative max-w-[90%] sm:max-w-[75%] md:max-w-[65%]"
         onMouseEnter={onMouseEnter}
@@ -321,16 +321,16 @@ function MessageBubble({
               {formatTime(message.timestamp)}
             </span>
           </div>
-          <p className="break-words text-[11px] sm:text-sm">{message.text}</p>
+          <p className="break-words text-[11px] sm:text-sm pb-1">{message.text}</p>
           {isOwn && message.status && (
             <div className="mt-0.5 flex justify-end">
               <StatusIcon status={message.status} />
             </div>
           )}
         </div>
-        {/* Reactions Display - Outside bubble, overlapping at bottom */}
+        {/* Reactions Display - Positioned at bottom corners, slightly inside */}
         {uniqueReactions.length > 0 && (
-          <div className={`absolute -bottom-4 ${isOwn ? "right-0" : "left-0"} z-5`}>
+          <div className={`absolute -bottom-2 ${isOwn ? "right-1" : "left-1"} z-5`}>
             <ReactionDisplay
               reactions={message.reactions}
               userId={currentUserId}
