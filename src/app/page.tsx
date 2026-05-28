@@ -51,6 +51,7 @@ const HEARTBEAT_INTERVAL = 30000;
 const USER_ACTIVE_THRESHOLD = 60000;
 const USER_REFRESH_INTERVAL = 5000;
 const STATUS_CLEAR_DELAY = 2000;
+const MESSAGES_PER_PAGE = 50;
 
 // ============================================================
 // UTILITIES
@@ -91,7 +92,12 @@ const getUniqueReactions = (reactions?: Reaction[]): Reaction[] => {
 // API HELPERS
 // ============================================================
 const api = {
-  getMessages: () => fetch(`${FIREBASE_DB_URL}/messages.json`),
+  getMessages: (limit?: number, startAfter?: string) => {
+    let url = `${FIREBASE_DB_URL}/messages.json?orderBy="$key"`;
+    if (limit) url += `&limitToLast=${limit}`;
+    if (startAfter) url += `&startAfter="${startAfter}"`;
+    return fetch(url);
+  },
   getUsers: () => fetch(`${FIREBASE_DB_URL}/users.json`),
   putUser: (userId: string, data: object) =>
     fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, {
@@ -368,13 +374,19 @@ export default function Home() {
   const [username, setUsername] = useState("");
   const [isJoined, setIsJoined] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isUserScrolled, setIsUserScrolled] = useState(false);
+  const [newMessageCount, setNewMessageCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const lastMessageIdRef = useRef<string | null>(null);
 
   // ── Persistence ──────────────────────────────────────────
   useEffect(() => {
@@ -387,11 +399,83 @@ export default function Home() {
     }
   }, []);
 
-  // ── Data Fetching ─────────────────────────────────────────
-  const loadMessages = useCallback(async () => {
+  // ── Scroll Detection ─────────────────────────────────────
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    
+    setIsUserScrolled(!isNearBottom);
+    
+    // Reset new message count when user scrolls to bottom
+    if (isNearBottom && newMessageCount > 0) {
+      setNewMessageCount(0);
+    }
+    
+    // Load more messages when scrolling near top
+    if (scrollTop < 100 && !isLoadingMore && hasMoreMessages) {
+      loadMoreMessages();
+    }
+  };
+
+  // ── Load More Messages ───────────────────────────────────
+  const loadMoreMessages = async () => {
+    if (isLoadingMore || !hasMoreMessages) return;
+    
+    setIsLoadingMore(true);
     try {
-      const res = await api.getMessages();
+      const oldestMessage = messages[0];
+      if (!oldestMessage) return;
+      
+      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessage.id}"&limitToLast=${MESSAGES_PER_PAGE}`);
       const data: Record<string, FirebaseMessage> = await res.json();
+      
+      const olderMessages: Message[] = Object.entries(data || {})
+        .filter(([, msg]) => msg?.text && msg?.username)
+        .map(([key, msg]) => ({
+          id: key,
+          text: msg.text,
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered" as MessageStatus,
+          reactions: sanitizeReactions(msg.reactions || []),
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
+      
+      if (olderMessages.length < MESSAGES_PER_PAGE) {
+        setHasMoreMessages(false);
+      }
+      
+      if (olderMessages.length > 0) {
+        setMessages(prev => [...olderMessages, ...prev]);
+        
+        // Maintain scroll position
+        setTimeout(() => {
+          if (messagesContainerRef.current && olderMessages.length > 0) {
+            const firstNewMessage = document.getElementById(`msg-${olderMessages[0].id}`);
+            if (firstNewMessage) {
+              const offset = firstNewMessage.getBoundingClientRect().top - messagesContainerRef.current.getBoundingClientRect().top;
+              messagesContainerRef.current.scrollTop = offset - 50;
+            }
+          }
+        }, 100);
+      }
+    } catch (err) {
+      console.error("Error loading more messages:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // ── Load Initial Messages ────────────────────────────────
+  const loadMessages = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&limitToLast=${MESSAGES_PER_PAGE}`);
+      const data: Record<string, FirebaseMessage> = await res.json();
+      
       const loaded: Message[] = Object.entries(data || {})
         .filter(([, msg]) => msg?.text && msg?.username)
         .map(([key, msg]) => ({
@@ -404,6 +488,15 @@ export default function Home() {
           reactions: sanitizeReactions(msg.reactions || []),
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
+      
+      if (loaded.length < MESSAGES_PER_PAGE) {
+        setHasMoreMessages(false);
+      }
+      
+      if (loaded.length > 0) {
+        lastMessageIdRef.current = loaded[loaded.length - 1].id;
+      }
+      
       setMessages(loaded);
     } catch (err) {
       console.error("Error loading messages:", err);
@@ -494,9 +587,12 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
 
+  // Auto-scroll to bottom only when user hasn't manually scrolled up
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (!isUserScrolled && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isUserScrolled]);
 
   // ── Pusher ────────────────────────────────────────────────
   useEffect(() => {
@@ -509,9 +605,16 @@ export default function Home() {
     channel.bind("new-message", (data: Message) => {
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
-        return [...prev, { ...data, status: "delivered" as MessageStatus }].sort(
+        const newMessages = [...prev, { ...data, status: "delivered" as MessageStatus }].sort(
           (a, b) => a.timestamp - b.timestamp
         );
+        
+        // Increment new message count if user is scrolled up
+        if (isUserScrolled) {
+          setNewMessageCount(prev => prev + 1);
+        }
+        
+        return newMessages;
       });
     });
     channel.bind(
@@ -538,7 +641,7 @@ export default function Home() {
       channel.unsubscribe();
       pusher.disconnect();
     };
-  }, [isJoined]);
+  }, [isJoined, isUserScrolled]);
 
   // ── Actions ───────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
@@ -577,6 +680,12 @@ export default function Home() {
     setHoveredMessageId(null);
   };
 
+  const scrollToBottom = () => {
+    setNewMessageCount(0);
+    setIsUserScrolled(false);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !username) return;
@@ -612,6 +721,12 @@ export default function Home() {
       console.error("Error sending message:", err);
       updateStatus("error");
     }
+    
+    // Auto-scroll to bottom when sending a new message
+    setIsUserScrolled(false);
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   };
 
   const joinChat = (e: React.FormEvent) => {
@@ -690,7 +805,7 @@ export default function Home() {
   // ── Chat Screen ───────────────────────────────────────────
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Header - Full width at top */}
+      {/* Header */}
       <div className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="px-4 py-3 flex justify-between items-center max-w-[70%] mx-auto">
           <div className="flex items-center gap-2 sm:gap-3">
@@ -700,7 +815,6 @@ export default function Home() {
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Hamburger Menu Button - Mobile */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -710,7 +824,6 @@ export default function Home() {
               </svg>
             </button>
             
-            {/* Desktop User Info */}
             <div className="hidden sm:flex items-center gap-3">
               <span className="text-sm text-gray-600">Logged in as:</span>
               <span className="font-medium text-gray-800">{username}</span>
@@ -722,7 +835,6 @@ export default function Home() {
               </button>
             </div>
             
-            {/* Mobile User Info */}
             <div className="sm:hidden flex items-center gap-2">
               <span className="text-sm font-medium text-gray-800">{username}</span>
             </div>
@@ -730,10 +842,9 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Chat Container - Full height minus header */}
+      {/* Chat Container */}
       <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
         <div className="w-full max-w-[70%] h-full">
-          {/* Main Content with Shadow */}
           <div className="bg-white rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
             <div className="flex flex-col lg:flex-row h-full">
               {/* Mobile Sidebar Overlay */}
@@ -789,8 +900,32 @@ export default function Home() {
               </div>
 
               {/* Chat Area */}
-              <div className="flex-1 flex flex-col h-full">
-                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              <div className="flex-1 flex flex-col h-full relative">
+                {/* Loading More Indicator */}
+                {isLoadingMore && (
+                  <div className="absolute top-0 left-0 right-0 bg-blue-100 text-blue-600 text-center py-1 text-xs z-10">
+                    Loading older messages...
+                  </div>
+                )}
+                
+                {/* New Message Button */}
+                {newMessageCount > 0 && (
+                  <button
+                    onClick={scrollToBottom}
+                    className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full px-4 py-2 shadow-lg hover:bg-blue-600 transition-colors z-10 text-sm flex items-center gap-2"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    {newMessageCount} new message{newMessageCount > 1 ? 's' : ''}
+                  </button>
+                )}
+                
+                <div 
+                  ref={messagesContainerRef}
+                  onScroll={handleScroll}
+                  className="flex-1 overflow-y-auto p-3 space-y-3"
+                >
                   {isLoading && (
                     <p className="text-center text-gray-500 mt-8 text-sm">
                       Loading messages...
@@ -802,20 +937,21 @@ export default function Home() {
                     </p>
                   )}
                   {messages.map((message) => (
-                    <MessageBubble
-                      key={message.id}
-                      message={message}
-                      currentUserId={userIdRef.current}
-                      isHovered={hoveredMessageId === message.id}
-                      onMouseEnter={() => handleMouseEnter(message.id)}
-                      onMouseLeave={handleMouseLeave}
-                      onReact={(type) => addReaction(message.id, type)}
-                    />
+                    <div key={message.id} id={`msg-${message.id}`}>
+                      <MessageBubble
+                        message={message}
+                        currentUserId={userIdRef.current}
+                        isHovered={hoveredMessageId === message.id}
+                        onMouseEnter={() => handleMouseEnter(message.id)}
+                        onMouseLeave={handleMouseLeave}
+                        onReact={(type) => addReaction(message.id, type)}
+                      />
+                    </div>
                   ))}
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input Area with top border */}
+                {/* Input Area */}
                 <div className="border-t p-3 flex-shrink-0">
                   <form onSubmit={sendMessage}>
                     <div className="flex gap-2">
