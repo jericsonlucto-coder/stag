@@ -4,12 +4,22 @@ import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
 
+type MessageStatus = "sending" | "sent" | "delivered" | "error";
+
 interface Message {
   id: string;
   text: string;
   username: string;
   timestamp: number;
   userId: string;
+  status?: MessageStatus;
+}
+
+interface User {
+  id: string;
+  username: string;
+  joinedAt: number;
+  lastActive: number;
 }
 
 // Firebase message structure
@@ -33,10 +43,66 @@ export default function Home() {
   const [username, setUsername] = useState("");
   const [isJoined, setIsJoined] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
+  const [showUsers, setShowUsers] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
+  const presenceChannelRef = useRef<any>(null);
+  const userHeartbeatRef = useRef<NodeJS.Timeout>();
 
-  // Load messages from Firebase - wrapped in useCallback to prevent recreation
+  // Update user's last active time
+  const updateLastActive = useCallback(async () => {
+    if (!isJoined) return;
+    
+    try {
+      await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          lastActive: Date.now(),
+        }),
+      });
+    } catch (error) {
+      console.error("Error updating last active:", error);
+    }
+  }, [isJoined]);
+
+  // Load online users from Firebase
+  const loadOnlineUsers = useCallback(async () => {
+    try {
+      const response = await fetch(`${FIREBASE_DB_URL}/users.json`);
+      const data: Record<string, User> = await response.json();
+      
+      const now = Date.now();
+      const activeUsers: User[] = [];
+      
+      if (data) {
+        Object.keys(data).forEach((key) => {
+          const user = data[key];
+          // Consider users active if they've been active in the last 60 seconds
+          if (now - user.lastActive < 60000) {
+            activeUsers.push({
+              ...user,
+              id: key,
+            });
+          } else {
+            // Remove inactive users
+            fetch(`${FIREBASE_DB_URL}/users/${key}.json`, {
+              method: "DELETE",
+            }).catch(console.error);
+          }
+        });
+      }
+      
+      setOnlineUsers(activeUsers);
+    } catch (error) {
+      console.error("Error loading online users:", error);
+    }
+  }, []);
+
+  // Load messages from Firebase
   const loadMessages = useCallback(async () => {
     try {
       console.log("Loading messages from Firebase...");
@@ -53,6 +119,7 @@ export default function Home() {
             username: msg.username,
             timestamp: msg.timestamp,
             userId: msg.userId,
+            status: "delivered",
           });
         });
       }
@@ -67,11 +134,63 @@ export default function Home() {
     }
   }, []);
 
+  // Register user when joining chat
+  const registerUser = useCallback(async () => {
+    try {
+      const userData: User = {
+        id: userIdRef.current,
+        username: username,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
+      };
+      
+      await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(userData),
+      });
+      
+      console.log("User registered:", username);
+    } catch (error) {
+      console.error("Error registering user:", error);
+    }
+  }, [username]);
+
+  // Remove user when leaving chat
+  const removeUser = useCallback(async () => {
+    try {
+      await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
+        method: "DELETE",
+      });
+      console.log("User removed:", username);
+    } catch (error) {
+      console.error("Error removing user:", error);
+    }
+  }, [username]);
+
   // Initial load when joining chat
   useEffect(() => {
     if (!isJoined) return;
+    
+    registerUser();
     loadMessages();
-  }, [isJoined, loadMessages]);
+    loadOnlineUsers();
+    
+    // Set up heartbeat to update last active every 30 seconds
+    userHeartbeatRef.current = setInterval(() => {
+      updateLastActive();
+      loadOnlineUsers(); // Refresh online users list
+    }, 30000);
+    
+    return () => {
+      if (userHeartbeatRef.current) {
+        clearInterval(userHeartbeatRef.current);
+      }
+      removeUser();
+    };
+  }, [isJoined, registerUser, loadMessages, loadOnlineUsers, updateLastActive, removeUser]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -88,16 +207,52 @@ export default function Home() {
       authEndpoint: "/api/pusher-auth",
     });
 
+    // Subscribe to presence channel for user online status
+    const presenceChannel = pusher.subscribe("presence-chat-channel");
+    presenceChannelRef.current = presenceChannel;
+    
+    presenceChannel.bind("pusher:subscription_succeeded", (members: any) => {
+      console.log("Presence channel subscribed, members:", members.count);
+      const users: User[] = [];
+      members.each((member: any) => {
+        users.push({
+          id: member.id,
+          username: member.info.username,
+          joinedAt: Date.now(),
+          lastActive: Date.now(),
+        });
+      });
+      setOnlineUsers(users);
+    });
+    
+    presenceChannel.bind("pusher:member_added", (member: any) => {
+      console.log("User joined:", member.info.username);
+      setOnlineUsers((prev) => {
+        if (!prev.some(u => u.id === member.id)) {
+          return [...prev, {
+            id: member.id,
+            username: member.info.username,
+            joinedAt: Date.now(),
+            lastActive: Date.now(),
+          }];
+        }
+        return prev;
+      });
+    });
+    
+    presenceChannel.bind("pusher:member_removed", (member: any) => {
+      console.log("User left:", member.info.username);
+      setOnlineUsers((prev) => prev.filter(u => u.id !== member.id));
+    });
+
     const channel = pusher.subscribe("private-chat-channel");
     
     channel.bind("new-message", (data: Message) => {
       console.log("New message received via Pusher:", data);
-      // Immediately add the message to the UI without reloading all messages
-      setMessages((prevMessages) => {
-        // Check if message already exists to avoid duplicates
+      setMessages((prevMessages: Message[]) => {
         const exists = prevMessages.some(msg => msg.id === data.id);
         if (!exists) {
-          const newMessages = [...prevMessages, data];
+          const newMessages: Message[] = [...prevMessages, { ...data, status: "delivered" }];
           newMessages.sort((a, b) => a.timestamp - b.timestamp);
           return newMessages;
         }
@@ -108,6 +263,10 @@ export default function Home() {
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
+      if (presenceChannelRef.current) {
+        presenceChannelRef.current.unbind_all();
+        presenceChannelRef.current.unsubscribe();
+      }
       pusher.disconnect();
     };
   }, [isJoined]);
@@ -116,17 +275,37 @@ export default function Home() {
     e.preventDefault();
     if (!inputMessage.trim() || !username) return;
 
+    const messageId = generateId();
     const newMessage: Message = {
-      id: generateId(),
+      id: messageId,
       text: inputMessage,
       username: username,
       timestamp: Date.now(),
       userId: userIdRef.current,
+      status: "sending",
     };
 
     console.log("Sending message:", newMessage);
+    
+    setInputMessage("");
+    
+    setMessages((prevMessages: Message[]) => {
+      const exists = prevMessages.some(msg => msg.id === messageId);
+      if (!exists) {
+        const newMessages: Message[] = [...prevMessages, newMessage];
+        newMessages.sort((a, b) => a.timestamp - b.timestamp);
+        return newMessages;
+      }
+      return prevMessages;
+    });
 
     try {
+      setMessages((prevMessages: Message[]) =>
+        prevMessages.map((msg) =>
+          msg.id === messageId ? { ...msg, status: "sent" as MessageStatus } : msg
+        )
+      );
+
       const response = await fetch("/api/send-message", {
         method: "POST",
         headers: {
@@ -137,25 +316,51 @@ export default function Home() {
 
       if (response.ok) {
         console.log("Message sent successfully");
-        setInputMessage("");
-        // Optimistically add message to UI
-        setMessages((prevMessages) => {
-          const exists = prevMessages.some(msg => msg.id === newMessage.id);
-          if (!exists) {
-            const newMessages = [...prevMessages, newMessage];
-            newMessages.sort((a, b) => a.timestamp - b.timestamp);
-            return newMessages;
-          }
-          return prevMessages;
-        });
+        setMessages((prevMessages: Message[]) =>
+          prevMessages.map((msg) =>
+            msg.id === messageId ? { ...msg, status: "delivered" as MessageStatus } : msg
+          )
+        );
+        
+        setTimeout(() => {
+          setMessages((prevMessages: Message[]) =>
+            prevMessages.map((msg) =>
+              msg.id === messageId ? { ...msg, status: undefined } : msg
+            )
+          );
+        }, 2000);
       } else {
         const error = await response.json();
         console.error("Failed to send message:", error);
-        alert("Failed to send message. Please try again.");
+        setMessages((prevMessages: Message[]) =>
+          prevMessages.map((msg) =>
+            msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
+          )
+        );
+        
+        setTimeout(() => {
+          setMessages((prevMessages: Message[]) =>
+            prevMessages.map((msg) =>
+              msg.id === messageId ? { ...msg, status: undefined } : msg
+            )
+          );
+        }, 3000);
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      alert("Error sending message. Please check your connection.");
+      setMessages((prevMessages: Message[]) =>
+        prevMessages.map((msg) =>
+          msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
+        )
+      );
+      
+      setTimeout(() => {
+        setMessages((prevMessages: Message[]) =>
+          prevMessages.map((msg) =>
+            msg.id === messageId ? { ...msg, status: undefined } : msg
+          )
+        );
+      }, 3000);
     }
   };
 
@@ -172,6 +377,50 @@ export default function Home() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const getStatusIcon = (status?: MessageStatus) => {
+    switch (status) {
+      case "sending":
+        return (
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            <span>Sending...</span>
+          </div>
+        );
+      case "sent":
+        return (
+          <div className="flex items-center gap-1 text-xs text-blue-500">
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>Sent</span>
+          </div>
+        );
+      case "delivered":
+        return (
+          <div className="flex items-center gap-1 text-xs text-green-500">
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Delivered</span>
+          </div>
+        );
+      case "error":
+        return (
+          <div className="flex items-center gap-1 text-xs text-red-500">
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Failed</span>
+          </div>
+        );
+      default:
+        return null;
+    }
   };
 
   if (!isJoined) {
@@ -223,23 +472,82 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="bg-white shadow-sm border-b">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Image src="/next.svg" alt="Logo" width={100} height={25} />
             <h1 className="text-xl font-semibold text-gray-800">Real-time Chat</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">Logged in as:</span>
-            <span className="font-medium text-gray-800">{username}</span>
+          <div className="flex items-center gap-4">
+            {/* Online Users Button */}
             <button
-              onClick={() => setIsJoined(false)}
-              className="text-sm text-red-500 hover:text-red-600"
+              onClick={() => setShowUsers(!showUsers)}
+              className="relative flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
             >
-              Leave
+              <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+              <span className="text-sm font-medium text-gray-700">
+                {onlineUsers.length} online
+              </span>
             </button>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-600">Logged in as:</span>
+              <span className="font-medium text-gray-800">{username}</span>
+              <button
+                onClick={() => setIsJoined(false)}
+                className="text-sm text-red-500 hover:text-red-600"
+              >
+                Leave
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Online Users Sidebar */}
+      {showUsers && (
+        <div className="fixed right-4 top-20 w-72 bg-white rounded-xl shadow-lg border z-10">
+          <div className="p-4 border-b">
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-gray-800">Online Users ({onlineUsers.length})</h3>
+              <button
+                onClick={() => setShowUsers(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="max-h-96 overflow-y-auto p-2">
+            {onlineUsers.map((user) => (
+              <div
+                key={user.id}
+                className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                <div className="relative">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                    {user.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-800">{user.username}</p>
+                  <p className="text-xs text-gray-500">
+                    {user.id === userIdRef.current ? "You" : "Online"}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {onlineUsers.length === 0 && (
+              <div className="text-center text-gray-500 py-4">
+                No other users online
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="max-w-4xl mx-auto p-4">
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
@@ -279,6 +587,11 @@ export default function Home() {
                     </span>
                   </div>
                   <p className="break-words">{message.text}</p>
+                  {message.userId === userIdRef.current && message.status && (
+                    <div className="mt-1 flex justify-end">
+                      {getStatusIcon(message.status)}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
