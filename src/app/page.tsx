@@ -81,7 +81,7 @@ export default function Home() {
 
     const pusher = new Pusher("bc4bbe143420c20c0e9d", {
       cluster: "ap1",
-      authEndpoint: "/api/pusher/auth",
+      authEndpoint: "/api/pusher-auth",
     });
 
     const channel = pusher.subscribe("private-chat-channel");
