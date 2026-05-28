@@ -252,7 +252,7 @@ function ReactionDisplay({
   const unique = getUniqueReactions(reactions);
   if (unique.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-0.5 mt-0">
+    <div className="flex flex-wrap gap-0.5 justify-end">
       {unique.map((reaction, idx) => {
         const isActive = sanitizeReactions(reactions || []).some(
           (r) => r.userId === userId && r.type === reaction.type
@@ -260,8 +260,8 @@ function ReactionDisplay({
         return (
           <div
             key={idx}
-            className={`inline-flex items-center gap-0.5 bg-white/80 border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-sm ${
-              isActive ? "border-blue-500 bg-blue-100" : "border-gray-300"
+            className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
+              isActive ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white"
             }`}
           >
             <span className="text-[10px] sm:text-sm">{reaction.type}</span>
@@ -322,19 +322,21 @@ function MessageBubble({
             </span>
           </div>
           <p className="break-words text-[11px] sm:text-sm">{message.text}</p>
-          {/* Reactions Display - Inside the bubble, no gap */}
-          {uniqueReactions.length > 0 && (
-            <ReactionDisplay
-              reactions={message.reactions}
-              userId={currentUserId}
-            />
-          )}
           {isOwn && message.status && (
             <div className="mt-0.5 flex justify-end">
               <StatusIcon status={message.status} />
             </div>
           )}
         </div>
+        {/* Reactions Display - Outside bubble, overlapping at bottom */}
+        {uniqueReactions.length > 0 && (
+          <div className={`absolute -bottom-2 ${isOwn ? "right-0" : "left-0"} z-5`}>
+            <ReactionDisplay
+              reactions={message.reactions}
+              userId={currentUserId}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
