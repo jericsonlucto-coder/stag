@@ -778,7 +778,7 @@ const sendImageMessage = async (imageUrl: string) => {
   const newMessage: Message = {
     id: messageId,
     text: "",
-    username: username, // Make sure username is included
+    username: username,
     timestamp: Date.now(),
     userId: userIdRef.current,
     status: "sending",
@@ -787,33 +787,42 @@ const sendImageMessage = async (imageUrl: string) => {
     isImage: true,
   };
   
-  console.log("Sending image message with username:", username);
+  console.log("📤 Sending image message:", { 
+    id: messageId, 
+    username: username, 
+    isImage: true,
+    imageUrlLength: imageUrl.length 
+  });
   
   const updateStatus = (status: MessageStatus | undefined) =>
     setMessages((prev) =>
       prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
     );
   
-  // Add message to UI immediately
+  // Add message to UI immediately (optimistic update)
   setMessages((prev) => {
     if (prev.some((m) => m.id === messageId)) return prev;
+    console.log("📱 Adding optimistic image message to UI");
     return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
   });
   
   try {
     updateStatus("sent");
+    console.log("📡 Sending image to API...");
     const res = await api.sendMessage(newMessage);
-    console.log("Image message API response status:", res.status);
+    console.log("📡 Image API response status:", res.status);
     
     if (res.ok) {
-      console.log("Image sent successfully");
-      // Let Pusher handle the delivered status
+      const responseData = await res.json();
+      console.log("✅ Image sent successfully, Firebase ID:", responseData.firebaseId);
+      // Don't update status to delivered - let Pusher handle it
     } else {
-      console.error("Failed to send image message");
+      const errorText = await res.text();
+      console.error("❌ Failed to send image message:", errorText);
       updateStatus("error");
     }
   } catch (err) {
-    console.error("Error sending image:", err);
+    console.error("❌ Error sending image:", err);
     updateStatus("error");
   }
   
@@ -881,7 +890,7 @@ const sendImageMessage = async (imageUrl: string) => {
   // ── Pusher ────────────────────────────────────────────────
 useEffect(() => {
   if (!isJoined) return;
-  console.log("Initializing Pusher connection...");
+  console.log("🔌 Initializing Pusher connection...");
   
   const pusher = new Pusher("bc4bbe143420c20c0e9d", {
     cluster: "ap1",
@@ -890,9 +899,13 @@ useEffect(() => {
   
   const channel = pusher.subscribe("private-chat-channel");
   
+  channel.bind("pusher:subscription_succeeded", () => {
+    console.log("✅ Successfully subscribed to private-chat-channel");
+  });
+  
   channel.bind("new-message", (data: any) => {
-    console.log("🔔 New message received via Pusher:", data);
-    console.log("Message details - Username:", data.username, "IsImage:", data.isImage);
+    console.log("🔔 NEW MESSAGE RECEIVED via Pusher:", JSON.stringify(data, null, 2));
+    console.log("📝 Message details - Username:", data.username, "IsImage:", data.isImage, "HasImageUrl:", !!data.imageUrl);
     
     setMessages((prev) => {
       // Check if message already exists
@@ -900,7 +913,7 @@ useEffect(() => {
       
       if (existingIndex !== -1) {
         // Update existing message status
-        console.log("Updating existing message status:", data.id);
+        console.log("📝 Updating existing message status:", data.id);
         const updated = [...prev];
         if (updated[existingIndex].status !== "delivered") {
           updated[existingIndex] = { ...updated[existingIndex], status: "delivered" };
@@ -921,11 +934,12 @@ useEffect(() => {
         imageUrl: data.imageUrl,
       };
       
-      console.log("✅ Adding new message to UI:", { 
+      console.log("✨ Adding NEW message to UI:", { 
         id: newMessage.id, 
         username: newMessage.username,
         isImage: newMessage.isImage,
-        hasImage: !!newMessage.imageUrl
+        hasImage: !!newMessage.imageUrl,
+        imageUrlPreview: newMessage.imageUrl?.substring(0, 100)
       });
       
       const newMessages = [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
@@ -960,6 +974,7 @@ useEffect(() => {
   });
   
   return () => {
+    console.log("🔌 Disconnecting Pusher...");
     channel.unbind_all();
     channel.unsubscribe();
     pusher.disconnect();
@@ -1023,14 +1038,14 @@ const sendMessage = async (e: React.FormEvent) => {
   const newMessage: Message = {
     id: messageId,
     text: inputMessage,
-    username: username, // Make sure username is included
+    username: username,
     timestamp: Date.now(),
     userId: userIdRef.current,
     status: "sending",
     reactions: [],
   };
   
-  console.log("Sending message with username:", username);
+  console.log("📤 Sending text message:", { id: messageId, username: username, text: inputMessage.substring(0, 50) });
   
   setInputMessage("");
   const updateStatus = (status: MessageStatus | undefined) =>
@@ -1041,6 +1056,7 @@ const sendMessage = async (e: React.FormEvent) => {
   // Add optimistic update
   setMessages((prev) => {
     if (prev.some((m) => m.id === messageId)) return prev;
+    console.log("📱 Adding optimistic text message to UI");
     return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
   });
   
@@ -1048,13 +1064,12 @@ const sendMessage = async (e: React.FormEvent) => {
     updateStatus("sent");
     const res = await api.sendMessage(newMessage);
     if (res.ok) {
-      // Let Pusher handle the delivered status
-      console.log("Message sent successfully");
+      console.log("✅ Text message sent successfully");
     } else {
       updateStatus("error");
     }
   } catch (err) {
-    console.error("Error sending message:", err);
+    console.error("❌ Error sending message:", err);
     updateStatus("error");
   }
   
