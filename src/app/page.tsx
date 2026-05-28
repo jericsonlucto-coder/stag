@@ -48,6 +48,20 @@ export default function Home() {
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
+  // Check for saved username on component mount
+  useEffect(() => {
+    const savedUsername = localStorage.getItem("chat-username");
+    const savedUserId = localStorage.getItem("chat-userId");
+    
+    if (savedUsername && savedUserId) {
+      console.log("Found saved username:", savedUsername);
+      setUsername(savedUsername);
+      userIdRef.current = savedUserId;
+      // Auto-join if username exists
+      setIsJoined(true);
+    }
+  }, []);
+
   // Update user's last active time
   const updateLastActive = useCallback(async () => {
     if (!isJoined) return;
@@ -369,8 +383,18 @@ export default function Home() {
     e.preventDefault();
     if (username.trim()) {
       console.log("User joining with username:", username);
+      // Save username and userId to localStorage
+      localStorage.setItem("chat-username", username);
+      localStorage.setItem("chat-userId", userIdRef.current);
       setIsJoined(true);
     }
+  };
+
+  const clearSavedUser = () => {
+    localStorage.removeItem("chat-username");
+    localStorage.removeItem("chat-userId");
+    setUsername("");
+    window.location.reload();
   };
 
   const formatTime = (timestamp: number) => {
@@ -456,6 +480,7 @@ export default function Home() {
                 placeholder="Enter your username"
                 required
                 maxLength={20}
+                autoFocus
               />
             </div>
             <button
@@ -483,10 +508,11 @@ export default function Home() {
             <span className="text-sm text-gray-600">Logged in as:</span>
             <span className="font-medium text-gray-800">{username}</span>
             <button
-              onClick={() => setIsJoined(false)}
+              onClick={clearSavedUser}
               className="text-sm text-red-500 hover:text-red-600"
+              title="Clear saved user and restart"
             >
-              Leave
+              Leave & Clear
             </button>
           </div>
         </div>
