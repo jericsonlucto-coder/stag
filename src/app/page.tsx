@@ -154,7 +154,7 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       color: "text-gray-500",
       label: "Sending...",
       icon: (
-        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+        <svg className="animate-spin h-2.5 w-2.5 sm:h-3 sm:w-3" viewBox="0 0 24 24">
           <circle
             className="opacity-25"
             cx="12"
@@ -176,7 +176,7 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       color: "text-blue-500",
       label: "Sent",
       icon: (
-        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-2.5 w-2.5 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       ),
@@ -185,7 +185,7 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       color: "text-green-500",
       label: "Delivered",
       icon: (
-        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-2.5 w-2.5 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
@@ -194,7 +194,7 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       color: "text-red-500",
       label: "Failed",
       icon: (
-        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-2.5 w-2.5 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
@@ -202,7 +202,7 @@ function StatusIcon({ status }: { status: MessageStatus }) {
   };
   const { color, label, icon } = configs[status];
   return (
-    <div className={`flex items-center gap-1 text-xs ${color}`}>
+    <div className={`flex items-center gap-0.5 text-[10px] sm:text-xs ${color}`}>
       {icon}
       <span>{label}</span>
     </div>
@@ -219,7 +219,7 @@ function ReactionPicker({
   onReact: (type: ReactionType) => void;
 }) {
   return (
-    <div className="bg-white rounded-lg shadow-lg border p-1.5 flex gap-0.5 z-20">
+    <div className="bg-white rounded-lg shadow-lg border p-1 sm:p-1.5 flex gap-0.5 z-20">
       {REACTIONS.map((reaction) => {
         const isActive = sanitizeReactions(reactions || []).some(
           (r) => r.userId === userId && r.type === reaction
@@ -228,7 +228,7 @@ function ReactionPicker({
           <button
             key={reaction}
             onClick={() => onReact(reaction)}
-            className={`hover:bg-gray-100 p-1 rounded transition-colors text-base ${
+            className={`hover:bg-gray-100 p-0.5 sm:p-1 rounded transition-colors text-sm sm:text-base ${
               isActive ? "bg-blue-100" : ""
             }`}
           >
@@ -251,7 +251,7 @@ function ReactionDisplay({
   const unique = getUniqueReactions(reactions);
   if (unique.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-1 mt-1">
+    <div className="flex flex-wrap gap-0.5 mt-0.5 sm:mt-1">
       {unique.map((reaction, idx) => {
         const isActive = sanitizeReactions(reactions || []).some(
           (r) => r.userId === userId && r.type === reaction.type
@@ -259,12 +259,12 @@ function ReactionDisplay({
         return (
           <div
             key={idx}
-            className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-1.5 py-0.5 text-xs shadow-sm ${
+            className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-1 py-0 sm:px-1.5 sm:py-0.5 text-[10px] sm:text-xs shadow-sm ${
               isActive ? "border-blue-500 bg-blue-50" : "border-gray-200"
             }`}
           >
-            <span className="text-sm">{reaction.type}</span>
-            <span className="text-xs text-gray-600">{counts[reaction.type]}</span>
+            <span className="text-xs sm:text-sm">{reaction.type}</span>
+            <span className="text-[10px] sm:text-xs text-gray-600">{counts[reaction.type]}</span>
           </div>
         );
       })}
@@ -290,15 +290,15 @@ function MessageBubble({
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-4`}>
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-3 sm:mb-4`}>
       <div
-        className="relative max-w-[75%] sm:max-w-[65%] md:max-w-[60%]"
+        className="relative max-w-[85%] sm:max-w-[75%] md:max-w-[65%]"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
         {/* Reaction Picker - Shows on hover at the top of bubble */}
         {isHovered && (
-          <div className={`absolute -top-8 ${isOwn ? "right-0" : "left-0"} z-10`}>
+          <div className={`absolute -top-7 sm:-top-8 ${isOwn ? "right-0" : "left-0"} z-10`}>
             <ReactionPicker
               reactions={message.reactions}
               userId={currentUserId}
@@ -308,26 +308,26 @@ function MessageBubble({
         )}
         {/* Bubble */}
         <div
-          className={`rounded-lg p-2 sm:p-2.5 ${
+          className={`rounded-lg p-1.5 sm:p-2.5 ${
             isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"
           }`}
         >
-          <div className="flex items-center gap-2 mb-0.5">
+          <div className="flex items-center gap-1 sm:gap-2 mb-0.5">
             <span className="font-semibold text-xs sm:text-sm">{message.username}</span>
-            <span className="text-xs opacity-75">
+            <span className="text-[10px] sm:text-xs opacity-75">
               {formatTime(message.timestamp)}
             </span>
           </div>
-          <p className="break-words text-sm">{message.text}</p>
+          <p className="break-words text-xs sm:text-sm">{message.text}</p>
           {isOwn && message.status && (
-            <div className="mt-1 flex justify-end">
+            <div className="mt-0.5 sm:mt-1 flex justify-end">
               <StatusIcon status={message.status} />
             </div>
           )}
         </div>
         {/* Reactions Display - Below the bubble */}
         {uniqueReactions.length > 0 && (
-          <div className="mt-1">
+          <div className="mt-0.5 sm:mt-1">
             <ReactionDisplay
               reactions={message.reactions}
               userId={currentUserId}
@@ -348,13 +348,13 @@ function UserListItem({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 p-2.5 hover:bg-gray-50 transition-colors border-b ${
+      className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 hover:bg-gray-50 transition-colors border-b ${
         isCurrentUser ? "bg-blue-50" : ""
       }`}
     >
       <div className="relative">
         <div
-          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
+          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white text-[10px] sm:text-xs font-semibold ${
             isCurrentUser
               ? "bg-gradient-to-br from-green-400 to-green-600"
               : "bg-gradient-to-br from-blue-400 to-indigo-500"
@@ -362,16 +362,16 @@ function UserListItem({
         >
           {user.username?.charAt(0).toUpperCase()}
         </div>
-        <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border border-white" />
+        <div className="absolute bottom-0 right-0 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-green-500 rounded-full border border-white" />
       </div>
       <div className="flex-1">
-        <p className="text-sm font-medium text-gray-800">
+        <p className="text-xs sm:text-sm font-medium text-gray-800">
           {user.username}
           {isCurrentUser && (
-            <span className="ml-2 text-xs text-green-600">(You)</span>
+            <span className="ml-1 sm:ml-2 text-[10px] sm:text-xs text-green-600">(You)</span>
           )}
         </p>
-        <p className="text-xs text-gray-500">Active now</p>
+        <p className="text-[10px] sm:text-xs text-gray-500">Active now</p>
       </div>
     </div>
   );
@@ -448,25 +448,21 @@ export default function Home() {
   const updateUserActivity = useCallback(() => {
     if (!isJoined) return;
     
-    // Clear the inactivity timeout
     if (activityTimeoutRef.current) {
       clearTimeout(activityTimeoutRef.current);
     }
     
-    // Update last active immediately
     updateLastActive();
     
-    // Set a timeout to mark user as inactive after 2 minutes of no activity
     activityTimeoutRef.current = setTimeout(() => {
       console.log("User marked as inactive due to no activity");
-    }, 120000); // 2 minutes
+    }, 120000);
   }, [isJoined, updateLastActive]);
 
   // ── Track user events for activity ───────────────────────
   useEffect(() => {
     if (!isJoined) return;
     
-    // Track various user events
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
     const handleUserActivity = () => updateUserActivity();
     
@@ -474,7 +470,6 @@ export default function Home() {
       window.addEventListener(event, handleUserActivity);
     });
     
-    // Initial activity tracking
     updateUserActivity();
     
     return () => {
@@ -509,19 +504,16 @@ export default function Home() {
     setIsUserScrolled(!isNearBottom);
     setShowScrollButton(!isNearBottom && scrollHeight > clientHeight);
     
-    // Reset new message count when user scrolls to bottom
     if (isNearBottom && newMessageCount > 0) {
       setNewMessageCount(0);
     }
     
-    // Show load more button when user scrolls near top and there are more messages
     if (isNearTop && hasMoreMessages && !isLoadingMore && messages.length > 0) {
       setShowLoadMoreButton(true);
     } else if (!isNearTop) {
       setShowLoadMoreButton(false);
     }
     
-    // Update activity on scroll
     updateUserActivity();
   };
 
@@ -694,7 +686,6 @@ export default function Home() {
     }
   }, [messages, isUserScrolled, isLoadingMore]);
 
-  // Update last active whenever user interacts with input
   useEffect(() => {
     if (!isJoined) return;
     
@@ -815,7 +806,6 @@ export default function Home() {
     e.preventDefault();
     if (!inputMessage.trim() || !username) return;
     
-    // Update user activity and ensure they're marked as active
     updateUserActivity();
     await updateLastActive();
     
@@ -889,19 +879,19 @@ export default function Home() {
   if (!isJoined) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
-          <div className="text-center mb-8">
+        <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full">
+          <div className="text-center mb-6 sm:mb-8">
             <Image
               src="/next.svg"
               alt="Logo"
-              width={120}
-              height={30}
-              className="mx-auto dark:invert"
+              width={100}
+              height={25}
+              className="mx-auto dark:invert w-[80px] sm:w-[120px]"
             />
-            <h2 className="text-2xl font-bold text-gray-800 mt-6">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mt-4 sm:mt-6">
               Join the Chat
             </h2>
-            <p className="text-gray-600 mt-2">
+            <p className="text-sm sm:text-base text-gray-600 mt-2">
               Enter your username to start chatting
             </p>
           </div>
@@ -914,7 +904,7 @@ export default function Home() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                 placeholder="Enter your username"
                 required
                 maxLength={20}
@@ -923,7 +913,7 @@ export default function Home() {
             </div>
             <button
               type="submit"
-              className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium"
+              className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm sm:text-base"
             >
               Join Chat
             </button>
@@ -938,23 +928,25 @@ export default function Home() {
     <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
       <div className="bg-white shadow-sm border-b flex-shrink-0">
-        <div className="px-4 py-3 flex justify-between items-center max-w-[70%] mx-auto">
+        <div className="px-3 sm:px-4 py-2 sm:py-3 flex justify-between items-center w-full lg:max-w-[70%] lg:mx-auto">
           <div className="flex items-center gap-2 sm:gap-3">
-            <Image src="/next.svg" alt="Logo" width={60} height={15} className="sm:w-[70px]" />
-            <h1 className="text-base sm:text-lg font-semibold text-gray-800">
+            <Image src="/next.svg" alt="Logo" width={50} height={12} className="sm:w-[60px]" />
+            <h1 className="text-sm sm:text-lg font-semibold text-gray-800">
               Chat
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Hamburger Menu Button - Mobile */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
             
+            {/* Desktop User Info */}
             <div className="hidden sm:flex items-center gap-3">
               <span className="text-sm text-gray-600">Logged in as:</span>
               <span className="font-medium text-gray-800">{username}</span>
@@ -966,17 +958,18 @@ export default function Home() {
               </button>
             </div>
             
-            <div className="sm:hidden flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-800">{username}</span>
+            {/* Mobile User Info */}
+            <div className="sm:hidden flex items-center gap-1">
+              <span className="text-xs font-medium text-gray-800">{username}</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Chat Container */}
-      <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
-        <div className="w-full max-w-[70%] h-full">
-          <div className="bg-white rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
+      <div className="flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+        <div className="w-full lg:max-w-[70%] h-full">
+          <div className="bg-white rounded-lg sm:rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
             <div className="flex flex-col lg:flex-row h-full">
               {/* Mobile Sidebar Overlay */}
               {isMobileMenuOpen && (
@@ -995,13 +988,13 @@ export default function Home() {
                   ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
                 `}
               >
-                <div className="p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
+                <div className="p-2 sm:p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                       </svg>
-                      <h3 className="font-semibold text-white text-sm">
+                      <h3 className="font-semibold text-white text-xs sm:text-sm">
                         Active ({onlineUsers.length})
                       </h3>
                     </div>
@@ -1015,9 +1008,9 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto h-[calc(100%-57px)]">
+                <div className="flex-1 overflow-y-auto h-[calc(100%-49px)] sm:h-[calc(100%-57px)]">
                   {onlineUsers.length === 0 ? (
-                    <p className="text-center text-gray-500 py-8 text-sm">No active users</p>
+                    <p className="text-center text-gray-500 py-8 text-xs sm:text-sm">No active users</p>
                   ) : (
                     onlineUsers.map((user) => (
                       <UserListItem
@@ -1034,29 +1027,31 @@ export default function Home() {
               <div className="flex-1 flex flex-col h-full relative">
                 {/* Load More Button */}
                 {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
-                  <div className="sticky top-0 z-10 p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b">
+                  <div className="sticky top-0 z-10 p-1.5 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b">
                     <button
                       onClick={loadMoreMessages}
                       disabled={isLoadingMore}
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 shadow-md"
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 shadow-md"
                     >
                       {isLoadingMore ? (
                         <>
-                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <svg className="animate-spin h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                           </svg>
-                          Loading older messages...
+                          <span className="hidden sm:inline">Loading older messages...</span>
+                          <span className="sm:hidden">Loading...</span>
                         </>
                       ) : (
                         <>
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
-                          Load older messages
+                          <span className="hidden sm:inline">Load older messages</span>
+                          <span className="sm:hidden">Load more</span>
                           {totalMessages > messages.length && (
-                            <span className="text-xs text-gray-500">
-                              ({totalMessages - messages.length} remaining)
+                            <span className="text-[10px] sm:text-xs text-gray-500">
+                              ({totalMessages - messages.length})
                             </span>
                           )}
                         </>
@@ -1069,9 +1064,9 @@ export default function Home() {
                 {showScrollButton && newMessageCount === 0 && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full p-2 shadow-lg hover:bg-blue-600 transition-colors z-10"
+                    className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full p-1.5 sm:p-2 shadow-lg hover:bg-blue-600 transition-colors z-10"
                   >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                     </svg>
                   </button>
@@ -1080,27 +1075,27 @@ export default function Home() {
                 {newMessageCount > 0 && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full px-4 py-2 shadow-lg hover:bg-blue-600 transition-colors z-10 text-sm flex items-center gap-2"
+                    className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full px-3 sm:px-4 py-1.5 sm:py-2 shadow-lg hover:bg-blue-600 transition-colors z-10 text-xs sm:text-sm flex items-center gap-1 sm:gap-2"
                   >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                     </svg>
-                    {newMessageCount} new message{newMessageCount > 1 ? 's' : ''}
+                    {newMessageCount}
                   </button>
                 )}
                 
                 <div 
                   ref={messagesContainerRef}
                   onScroll={handleScroll}
-                  className="flex-1 overflow-y-auto p-3 space-y-3"
+                  className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3"
                 >
                   {isLoading && (
-                    <p className="text-center text-gray-500 mt-8 text-sm">
+                    <p className="text-center text-gray-500 mt-8 text-xs sm:text-sm">
                       Loading messages...
                     </p>
                   )}
                   {!isLoading && messages.length === 0 && (
-                    <p className="text-center text-gray-500 mt-8 text-sm">
+                    <p className="text-center text-gray-500 mt-8 text-xs sm:text-sm">
                       No messages yet. Start the conversation!
                     </p>
                   )}
@@ -1120,9 +1115,9 @@ export default function Home() {
                 </div>
 
                 {/* Input Area */}
-                <div className="border-t p-3 flex-shrink-0">
+                <div className="border-t p-2 sm:p-3 flex-shrink-0">
                   <form onSubmit={sendMessage}>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1 sm:gap-2">
                       <input
                         type="text"
                         value={inputMessage}
@@ -1130,12 +1125,12 @@ export default function Home() {
                         onFocus={updateUserActivity}
                         onClick={updateUserActivity}
                         placeholder="Type a message..."
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
                         maxLength={500}
                       />
                       <button
                         type="submit"
-                        className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm"
+                        className="bg-blue-500 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-xs sm:text-sm"
                       >
                         Send
                       </button>
