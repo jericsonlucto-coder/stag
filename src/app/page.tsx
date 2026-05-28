@@ -24,6 +24,8 @@ interface Message {
   userId: string;
   status?: MessageStatus;
   reactions?: Reaction[];
+  imageUrl?: string;
+  isImage?: boolean;
 }
 
 interface User {
@@ -40,6 +42,8 @@ interface FirebaseMessage {
   userId: string;
   createdAt: string;
   reactions?: Reaction[];
+  imageUrl?: string;
+  isImage?: boolean;
 }
 
 // ============================================================
@@ -143,6 +147,15 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId, reaction }),
     }),
+  uploadImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    const res = await fetch("/api/upload-image", {
+      method: "POST",
+      body: formData,
+    });
+    return res.json();
+  },
 };
 
 // ============================================================
@@ -323,7 +336,18 @@ function MessageBubble({
               {formatTime(message.timestamp)}
             </span>
           </div>
-          <p className="break-words text-[11px] sm:text-sm">{message.text}</p>
+          {message.isImage && message.imageUrl ? (
+            <div className="mt-1">
+              <img
+                src={message.imageUrl}
+                alt="Shared image"
+                className="max-w-full rounded-lg max-h-64 object-cover cursor-pointer"
+                onClick={() => window.open(message.imageUrl, '_blank')}
+              />
+            </div>
+          ) : (
+            <p className="break-words text-[11px] sm:text-sm">{message.text}</p>
+          )}
           {isOwn && message.status && (
             <div className="mt-0.5 flex justify-end">
               <StatusIcon status={message.status} />
@@ -403,6 +427,8 @@ export default function Home() {
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
@@ -543,6 +569,8 @@ export default function Home() {
           userId: msg.userId || "",
           status: "delivered" as MessageStatus,
           reactions: sanitizeReactions(msg.reactions || []),
+          imageUrl: msg.imageUrl,
+          isImage: msg.isImage,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
@@ -612,6 +640,8 @@ export default function Home() {
           userId: msg.userId || "",
           status: "delivered" as MessageStatus,
           reactions: sanitizeReactions(msg.reactions || []),
+          imageUrl: msg.imageUrl,
+          isImage: msg.isImage,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
@@ -657,6 +687,84 @@ export default function Home() {
       console.error("Error removing user:", err);
     }
   }, []);
+
+  // ── Image Upload Handler ─────────────────────────────────
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+    
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image size should be less than 5MB');
+      return;
+    }
+    
+    setIsUploading(true);
+    
+    try {
+      const result = await api.uploadImage(file);
+      if (result.url) {
+        await sendImageMessage(result.url);
+      }
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      alert("Failed to upload image");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+  
+  const sendImageMessage = async (imageUrl: string) => {
+    const messageId = generateId();
+    const newMessage: Message = {
+      id: messageId,
+      text: "",
+      username,
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+      imageUrl: imageUrl,
+      isImage: true,
+    };
+    
+    const updateStatus = (status: MessageStatus | undefined) =>
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+      );
+    
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === messageId)) return prev;
+      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+    });
+    
+    try {
+      updateStatus("sent");
+      const res = await api.sendMessage(newMessage);
+      if (res.ok) {
+        updateStatus("delivered");
+        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+      } else {
+        updateStatus("error");
+      }
+    } catch (err) {
+      console.error("Error sending image:", err);
+      updateStatus("error");
+    }
+    
+    setIsUserScrolled(false);
+    setShowScrollButton(false);
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
 
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => {
@@ -1119,9 +1227,9 @@ export default function Home() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input Area */}
+                {/* Input Area with Image Upload */}
                 <div className="border-t p-1.5 sm:p-3 flex-shrink-0">
-                  <form onSubmit={sendMessage}>
+                  <form onSubmit={sendMessage} className="flex flex-col gap-2">
                     <div className="flex gap-1 sm:gap-2">
                       <input
                         type="text"
@@ -1139,6 +1247,39 @@ export default function Home() {
                       >
                         Send
                       </button>
+                    </div>
+                    <div className="flex justify-end">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImageUpload}
+                        accept="image/*"
+                        className="hidden"
+                        id="image-upload"
+                      />
+                      <label
+                        htmlFor="image-upload"
+                        className={`cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded-lg text-xs sm:text-sm transition-colors flex items-center gap-1 ${
+                          isUploading ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        {isUploading ? (
+                          <>
+                            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            Send Image
+                          </>
+                        )}
+                      </label>
                     </div>
                   </form>
                 </div>
