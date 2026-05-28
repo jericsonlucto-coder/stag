@@ -1,5 +1,4 @@
 "use client";
-
 import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
@@ -7,7 +6,6 @@ import Pusher from "pusher-js";
 // ============================================================
 // TYPES & INTERFACES
 // ============================================================
-
 type MessageStatus = "sending" | "sent" | "delivered" | "error";
 type ReactionType = "👍" | "❤️" | "😂" | "😮" | "😢" | "🙏";
 
@@ -47,7 +45,6 @@ interface FirebaseMessage {
 // ============================================================
 // CONSTANTS
 // ============================================================
-
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 const REACTIONS: ReactionType[] = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const HEARTBEAT_INTERVAL = 30000;
@@ -58,7 +55,6 @@ const STATUS_CLEAR_DELAY = 2000;
 // ============================================================
 // UTILITIES
 // ============================================================
-
 const generateId = () =>
   Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 
@@ -94,42 +90,35 @@ const getUniqueReactions = (reactions?: Reaction[]): Reaction[] => {
 // ============================================================
 // API HELPERS
 // ============================================================
-
 const api = {
   getMessages: () => fetch(`${FIREBASE_DB_URL}/messages.json`),
   getUsers: () => fetch(`${FIREBASE_DB_URL}/users.json`),
-
   putUser: (userId: string, data: object) =>
     fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
-
   patchUser: (userId: string, data: object) =>
     fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
-
   deleteUser: (userId: string) =>
     fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, { method: "DELETE" }),
-
   putReactions: (messageId: string, reactions: Reaction[]) =>
     fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(reactions),
     }),
-
   sendMessage: (message: Message) =>
     fetch("/api/send-message", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(message),
     }),
-
   sendReaction: (messageId: string, reaction: Reaction | null) =>
     fetch("/api/send-reaction", {
       method: "POST",
@@ -141,7 +130,6 @@ const api = {
 // ============================================================
 // SUB-COMPONENTS
 // ============================================================
-
 function StatusIcon({ status }: { status: MessageStatus }) {
   const configs = {
     sending: {
@@ -194,7 +182,6 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       ),
     },
   };
-
   const { color, label, icon } = configs[status];
   return (
     <div className={`flex items-center gap-1 text-xs ${color}`}>
@@ -244,9 +231,7 @@ function ReactionDisplay({
 }) {
   const counts = getReactionCounts(reactions);
   const unique = getUniqueReactions(reactions);
-
   if (unique.length === 0) return null;
-
   return (
     <div className="flex flex-wrap gap-1">
       {unique.map((reaction, idx) => {
@@ -257,9 +242,7 @@ function ReactionDisplay({
           <div
             key={idx}
             className={`inline-flex items-center gap-1 bg-white border rounded-full px-2 py-0.5 text-sm shadow-sm ${
-              isActive
-                ? "border-blue-500 bg-blue-50"
-                : "border-gray-200"
+              isActive ? "border-blue-500 bg-blue-50" : "border-gray-200"
             }`}
           >
             <span>{reaction.type}</span>
@@ -288,19 +271,16 @@ function MessageBubble({
 }) {
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
-
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-8`}>
       <div
-        className="relative max-w-[70%]"
+        className="relative max-w-[85%] sm:max-w-[70%]"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
         {/* Reaction Picker */}
         {isHovered && (
-          <div
-            className={`absolute -top-12 ${isOwn ? "right-0" : "left-0"}`}
-          >
+          <div className={`absolute -top-12 ${isOwn ? "right-0" : "left-0"}`}>
             <ReactionPicker
               reactions={message.reactions}
               userId={currentUserId}
@@ -308,7 +288,6 @@ function MessageBubble({
             />
           </div>
         )}
-
         {/* Bubble */}
         <div
           className={`rounded-lg p-3 ${
@@ -328,7 +307,6 @@ function MessageBubble({
             </div>
           )}
         </div>
-
         {/* Reactions */}
         {uniqueReactions.length > 0 && (
           <div className={`absolute -bottom-6 ${isOwn ? "right-0" : "left-0"}`}>
@@ -384,7 +362,6 @@ function UserListItem({
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -393,14 +370,13 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
-
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // ── Persistence ──────────────────────────────────────────
-
   useEffect(() => {
     const savedUsername = localStorage.getItem("chat-username");
     const savedUserId = localStorage.getItem("chat-userId");
@@ -412,31 +388,29 @@ export default function Home() {
   }, []);
 
   // ── Data Fetching ─────────────────────────────────────────
-
-    const loadMessages = useCallback(async () => {
-      try {
-        const res = await api.getMessages();
-        const data: Record<string, FirebaseMessage> = await res.json();
-        const loaded: Message[] = Object.entries(data || {})
-          .filter(([, msg]) => msg?.text && msg?.username)
-          .map(([key, msg]) => ({
-            id: key,
-            text: msg.text,
-            username: msg.username,
-            timestamp: msg.timestamp || Date.now(),
-            userId: msg.userId || "",
-            status: "delivered" as MessageStatus,  // 👈 add this cast
-            reactions: sanitizeReactions(msg.reactions || []),
-          }))
-          .sort((a, b) => a.timestamp - b.timestamp);
-    
-        setMessages(loaded);
-      } catch (err) {
-        console.error("Error loading messages:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }, []);
+  const loadMessages = useCallback(async () => {
+    try {
+      const res = await api.getMessages();
+      const data: Record<string, FirebaseMessage> = await res.json();
+      const loaded: Message[] = Object.entries(data || {})
+        .filter(([, msg]) => msg?.text && msg?.username)
+        .map(([key, msg]) => ({
+          id: key,
+          text: msg.text,
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered" as MessageStatus,
+          reactions: sanitizeReactions(msg.reactions || []),
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
+      setMessages(loaded);
+    } catch (err) {
+      console.error("Error loading messages:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const loadOnlineUsers = useCallback(async () => {
     try {
@@ -444,7 +418,6 @@ export default function Home() {
       const data: Record<string, any> = await res.json();
       const now = Date.now();
       const active: User[] = [];
-
       Object.entries(data || {}).forEach(([key, user]) => {
         if (!user?.username || !user?.lastActive) return;
         if (now - user.lastActive < USER_ACTIVE_THRESHOLD) {
@@ -458,13 +431,11 @@ export default function Home() {
           api.deleteUser(key).catch(console.error);
         }
       });
-
       active.sort((a, b) => {
         if (a.id === userIdRef.current) return -1;
         if (b.id === userIdRef.current) return 1;
         return a.username.localeCompare(b.username);
       });
-
       setOnlineUsers(active);
     } catch (err) {
       console.error("Error loading online users:", err);
@@ -472,7 +443,6 @@ export default function Home() {
   }, []);
 
   // ── User Presence ─────────────────────────────────────────
-
   const registerUser = useCallback(async () => {
     try {
       await api.putUser(userIdRef.current, {
@@ -504,7 +474,6 @@ export default function Home() {
   }, [isJoined]);
 
   // ── Effects ───────────────────────────────────────────────
-
   useEffect(() => {
     if (!isJoined) return;
     registerUser();
@@ -530,17 +499,13 @@ export default function Home() {
   }, [messages]);
 
   // ── Pusher ────────────────────────────────────────────────
-
   useEffect(() => {
     if (!isJoined) return;
-
     const pusher = new Pusher("bc4bbe143420c20c0e9d", {
       cluster: "ap1",
       authEndpoint: "/api/pusher-auth",
     });
-
     const channel = pusher.subscribe("private-chat-channel");
-
     channel.bind("new-message", (data: Message) => {
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
@@ -549,7 +514,6 @@ export default function Home() {
         );
       });
     });
-
     channel.bind(
       "message-reaction",
       (data: { messageId: string; reaction: Reaction | null }) => {
@@ -569,7 +533,6 @@ export default function Home() {
         );
       }
     );
-
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
@@ -578,14 +541,12 @@ export default function Home() {
   }, [isJoined]);
 
   // ── Actions ───────────────────────────────────────────────
-
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
     const message = messages.find((m) => m.id === messageId);
     const cleanReactions = sanitizeReactions(message?.reactions || []);
     const hasReacted = cleanReactions.some(
       (r) => r.userId === userIdRef.current && r.type === reactionType
     );
-
     const updatedReactions = hasReacted
       ? cleanReactions.filter(
           (r) => !(r.userId === userIdRef.current && r.type === reactionType)
@@ -599,14 +560,11 @@ export default function Home() {
             timestamp: Date.now(),
           },
         ];
-
-    // Optimistic update
     setMessages((prev) =>
       prev.map((msg) =>
         msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg
       )
     );
-
     try {
       await api.putReactions(messageId, updatedReactions);
       await api.sendReaction(
@@ -616,14 +574,12 @@ export default function Home() {
     } catch (err) {
       console.error("Error updating reaction:", err);
     }
-
     setHoveredMessageId(null);
   };
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !username) return;
-
     const messageId = generateId();
     const newMessage: Message = {
       id: messageId,
@@ -634,19 +590,15 @@ export default function Home() {
       status: "sending",
       reactions: [],
     };
-
     setInputMessage("");
-
     const updateStatus = (status: MessageStatus | undefined) =>
       setMessages((prev) =>
         prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
       );
-
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === messageId)) return prev;
-        return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-      });
-
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === messageId)) return prev;
+      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+    });
     try {
       updateStatus("sent");
       const res = await api.sendMessage(newMessage);
@@ -678,21 +630,16 @@ export default function Home() {
   };
 
   // ── Hover Handlers ────────────────────────────────────────
-
   const handleMouseEnter = (messageId: string) => {
     clearTimeout(hoverTimeoutRef.current);
     setHoveredMessageId(messageId);
   };
 
   const handleMouseLeave = () => {
-    hoverTimeoutRef.current = setTimeout(
-      () => setHoveredMessageId(null),
-      200
-    );
+    hoverTimeoutRef.current = setTimeout(() => setHoveredMessageId(null), 200);
   };
 
   // ── Join Screen ───────────────────────────────────────────
-
   if (!isJoined) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -741,57 +688,89 @@ export default function Home() {
   }
 
   // ── Chat Screen ───────────────────────────────────────────
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+      <div className="bg-white shadow-sm border-b flex-shrink-0">
+        <div className="px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <Image src="/next.svg" alt="Logo" width={100} height={25} />
-            <h1 className="text-xl font-semibold text-gray-800">
+            <Image src="/next.svg" alt="Logo" width={80} height={20} />
+            <h1 className="text-lg sm:text-xl font-semibold text-gray-800">
               Real-time Chat
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">Logged in as:</span>
-            <span className="font-medium text-gray-800">{username}</span>
+            {/* Hamburger Menu Button - Mobile */}
             <button
-              onClick={clearSavedUser}
-              className="text-sm text-red-500 hover:text-red-600"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              Leave & Clear
+              <svg className="h-6 w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
             </button>
+            
+            {/* Desktop User Info */}
+            <div className="hidden sm:flex items-center gap-3">
+              <span className="text-sm text-gray-600">Logged in as:</span>
+              <span className="font-medium text-gray-800">{username}</span>
+              <button
+                onClick={clearSavedUser}
+                className="text-sm text-red-500 hover:text-red-600"
+              >
+                Leave
+              </button>
+            </div>
+            
+            {/* Mobile User Info */}
+            <div className="sm:hidden flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-800">{username}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main */}
-      <div className="max-w-6xl mx-auto p-4">
-        <div className="flex gap-4">
-          {/* Sidebar */}
-          <div className="w-72 bg-white rounded-xl shadow-lg overflow-hidden flex-shrink-0">
-            <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
-              <div className="flex items-center gap-2">
-                <svg
-                  className="h-5 w-5 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden relative">
+        <div className="h-full flex flex-col lg:flex-row">
+          {/* Mobile Sidebar Overlay */}
+          {isMobileMenuOpen && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+              onClick={() => setIsMobileMenuOpen(false)}
+            />
+          )}
+          
+          {/* Online Users Sidebar */}
+          <div
+            className={`
+              fixed lg:relative lg:w-80 w-64 bg-white shadow-lg lg:shadow-none 
+              transform transition-transform duration-300 ease-in-out z-50
+              h-full flex flex-col
+              ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+            `}
+          >
+            <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-indigo-600 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  <h3 className="font-semibold text-white">
+                    Active Now ({onlineUsers.length})
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="lg:hidden text-white hover:text-gray-200"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                  />
-                </svg>
-                <h3 className="font-semibold text-white">
-                  Active Now ({onlineUsers.length})
-                </h3>
+                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             </div>
-            <div className="h-[500px] overflow-y-auto">
+            <div className="flex-1 overflow-y-auto">
               {onlineUsers.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No active users</p>
               ) : (
@@ -806,9 +785,9 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Chat */}
-          <div className="flex-1 bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="h-[500px] overflow-y-auto p-4 space-y-3">
+          {/* Chat Area */}
+          <div className="flex-1 flex flex-col bg-white shadow-lg lg:shadow-none rounded-t-xl lg:rounded-none overflow-hidden m-2 lg:m-0">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {isLoading && (
                 <p className="text-center text-gray-500 mt-8">
                   Loading messages...
@@ -833,19 +812,20 @@ export default function Home() {
               <div ref={messagesEndRef} />
             </div>
 
-            <form onSubmit={sendMessage} className="border-t p-4">
+            {/* Input Area */}
+            <form onSubmit={sendMessage} className="border-t p-4 flex-shrink-0">
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   placeholder="Type a message..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   maxLength={500}
                 />
                 <button
                   type="submit"
-                  className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                  className="bg-blue-500 text-white px-4 sm:px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm sm:text-base"
                 >
                   Send
                 </button>
