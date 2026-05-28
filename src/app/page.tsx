@@ -92,6 +92,16 @@ const getUniqueReactions = (reactions?: Reaction[]): Reaction[] => {
 // API HELPERS
 // ============================================================
 const api = {
+  getMessagesCount: async () => {
+    try {
+      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?shallow=true`);
+      const data = await res.json();
+      return Object.keys(data || {}).length;
+    } catch (err) {
+      console.error("Error getting message count:", err);
+      return 0;
+    }
+  },
   getMessages: (limit?: number, startAfter?: string) => {
     let url = `${FIREBASE_DB_URL}/messages.json?orderBy="$key"`;
     if (limit) url += `&limitToLast=${limit}`;
@@ -379,6 +389,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [totalMessages, setTotalMessages] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -390,7 +401,6 @@ export default function Home() {
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  const lastMessageIdRef = useRef<string | null>(null);
 
   // ── Persistence ──────────────────────────────────────────
   useEffect(() => {
@@ -444,8 +454,15 @@ export default function Home() {
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
-      if (olderMessages.length === 0 || olderMessages.length < MESSAGES_PER_PAGE) {
+      // Check if there are more messages to load
+      if (olderMessages.length === 0) {
         setHasMoreMessages(false);
+      } else {
+        // Check if we've loaded all messages by comparing with total count
+        const newTotalCount = messages.length + olderMessages.length;
+        if (newTotalCount >= totalMessages) {
+          setHasMoreMessages(false);
+        }
       }
       
       if (olderMessages.length > 0) {
@@ -471,10 +488,30 @@ export default function Home() {
     }
   };
 
+  // ── Check if there are older messages ────────────────────
+  const checkForOlderMessages = useCallback(async () => {
+    if (messages.length === 0) return;
+    
+    try {
+      const oldestMessageId = messages[0].id;
+      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
+      const data = await res.json();
+      
+      // If there's at least one message older than our oldest, show load more button
+      setHasMoreMessages(Object.keys(data || {}).length > 0);
+    } catch (err) {
+      console.error("Error checking for older messages:", err);
+    }
+  }, [messages]);
+
   // ── Load Initial Messages ────────────────────────────────
   const loadMessages = useCallback(async () => {
     setIsLoading(true);
     try {
+      // Get total message count first
+      const totalCount = await api.getMessagesCount();
+      setTotalMessages(totalCount);
+      
       const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&limitToLast=${MESSAGES_PER_PAGE}`);
       const data: Record<string, FirebaseMessage> = await res.json();
       
@@ -491,15 +528,17 @@ export default function Home() {
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
-      if (loaded.length < MESSAGES_PER_PAGE) {
+      setMessages(loaded);
+      
+      // Check if there are more messages to load
+      if (loaded.length > 0) {
+        const oldestMessageId = loaded[0].id;
+        const olderCheck = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
+        const olderData = await olderCheck.json();
+        setHasMoreMessages(Object.keys(olderData || {}).length > 0);
+      } else {
         setHasMoreMessages(false);
       }
-      
-      if (loaded.length > 0) {
-        lastMessageIdRef.current = loaded[loaded.length - 1].id;
-      }
-      
-      setMessages(loaded);
       
       // Scroll to bottom after initial load
       setTimeout(() => {
@@ -594,12 +633,18 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
 
+  // Check for older messages when messages change
+  useEffect(() => {
+    if (!isJoined || messages.length === 0) return;
+    checkForOlderMessages();
+  }, [isJoined, messages, checkForOlderMessages]);
+
   // Auto-scroll to bottom only when user hasn't manually scrolled up
   useEffect(() => {
-    if (!isUserScrolled && messagesEndRef.current && messages.length > 0) {
+    if (!isUserScrolled && messagesEndRef.current && messages.length > 0 && !isLoadingMore) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isUserScrolled]);
+  }, [messages, isUserScrolled, isLoadingMore]);
 
   // ── Pusher ────────────────────────────────────────────────
   useEffect(() => {
@@ -910,9 +955,9 @@ export default function Home() {
 
               {/* Chat Area */}
               <div className="flex-1 flex flex-col h-full relative">
-                {/* Load More Button */}
+                {/* Load More Button - Always show at top if there are older messages */}
                 {hasMoreMessages && !isLoading && messages.length > 0 && (
-                  <div className="sticky top-0 z-10 p-2 flex justify-center">
+                  <div className="sticky top-0 z-10 p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b">
                     <button
                       onClick={loadMoreMessages}
                       disabled={isLoadingMore}
@@ -924,14 +969,14 @@ export default function Home() {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                           </svg>
-                          Loading...
+                          Loading older messages...
                         </>
                       ) : (
                         <>
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
-                          Load More Messages
+                          Load older messages ({totalMessages - messages.length} remaining)
                         </>
                       )}
                     </button>
