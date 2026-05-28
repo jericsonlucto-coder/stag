@@ -53,7 +53,7 @@ async function getMD5(str: string): Promise<string> {
 export async function POST(request: Request) {
   try {
     const message: Message = await request.json();
-    console.log("Received message to save:", message);
+    console.log("Received message to save:", { ...message, imageUrl: message.imageUrl ? "present" : "none" });
     
     // Create the data to save to Firebase
     const messageData: any = {
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     if (message.isImage && message.imageUrl) {
       messageData.isImage = true;
       messageData.imageUrl = message.imageUrl;
-      console.log("Saving image message to Firebase, imageUrl length:", message.imageUrl.length);
+      console.log("Saving image message to Firebase");
     }
     
     // Save to Firebase Realtime Database
@@ -91,18 +91,24 @@ export async function POST(request: Request) {
       );
     }
     
-    // Create the payload for Pusher HTTP API with full message data including image
+    // Create the payload for Pusher with ALL message data
     const pusherMessage = {
-      id: firebaseResult.name, // Use Firebase generated ID
+      id: firebaseResult.name,
       text: message.text || "",
       username: message.username,
       timestamp: message.timestamp,
       userId: message.userId,
       isImage: message.isImage || false,
-      imageUrl: message.imageUrl || undefined,
+      imageUrl: message.imageUrl || null,
+      reactions: message.reactions || [],
     };
     
-    console.log("Broadcasting to Pusher:", pusherMessage);
+    console.log("Broadcasting to Pusher:", { 
+      id: pusherMessage.id, 
+      username: pusherMessage.username, 
+      isImage: pusherMessage.isImage,
+      hasImageUrl: !!pusherMessage.imageUrl
+    });
     
     const payload = {
       name: "new-message",
