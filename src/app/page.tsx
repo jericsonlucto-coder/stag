@@ -68,7 +68,7 @@ const formatTime = (timestamp: number) =>
     minute: "2-digit",
   });
 
-const sanitizeReactions = (reactions: any[]): Reaction[] =>
+const sanitizeReactions = (reactions: Reaction[] | undefined): Reaction[] =>
   (reactions || []).filter((r) => r !== null && r !== undefined);
 
 const getReactionCounts = (reactions?: Reaction[]): Record<string, number> => {
