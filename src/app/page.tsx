@@ -272,9 +272,9 @@ function MessageBubble({
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-8`}>
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-6`}>
       <div
-        className="relative max-w-[85%] sm:max-w-[70%]"
+        className="relative max-w-[80%] sm:max-w-[65%] md:max-w-[60%]"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
@@ -290,17 +290,17 @@ function MessageBubble({
         )}
         {/* Bubble */}
         <div
-          className={`rounded-lg p-3 ${
+          className={`rounded-lg p-2.5 sm:p-3 ${
             isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"
           }`}
         >
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-semibold text-sm">{message.username}</span>
+            <span className="font-semibold text-xs sm:text-sm">{message.username}</span>
             <span className="text-xs opacity-75">
               {formatTime(message.timestamp)}
             </span>
           </div>
-          <p className="break-words">{message.text}</p>
+          <p className="break-words text-sm sm:text-base">{message.text}</p>
           {isOwn && message.status && (
             <div className="mt-1 flex justify-end">
               <StatusIcon status={message.status} />
@@ -336,7 +336,7 @@ function UserListItem({
     >
       <div className="relative">
         <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
+          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white text-xs sm:text-sm font-semibold ${
             isCurrentUser
               ? "bg-gradient-to-br from-green-400 to-green-600"
               : "bg-gradient-to-br from-blue-400 to-indigo-500"
@@ -344,7 +344,7 @@ function UserListItem({
         >
           {user.username?.charAt(0).toUpperCase()}
         </div>
-        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+        <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white" />
       </div>
       <div className="flex-1">
         <p className="text-sm font-medium text-gray-800">
@@ -693,19 +693,19 @@ export default function Home() {
       {/* Header */}
       <div className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <Image src="/next.svg" alt="Logo" width={80} height={20} />
-            <h1 className="text-lg sm:text-xl font-semibold text-gray-800">
-              Real-time Chat
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Image src="/next.svg" alt="Logo" width={70} height={18} className="sm:w-[80px] sm:h-[20px]" />
+            <h1 className="text-base sm:text-xl font-semibold text-gray-800">
+              Chat
             </h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Hamburger Menu Button - Mobile */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <svg className="h-6 w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
@@ -744,7 +744,7 @@ export default function Home() {
           {/* Online Users Sidebar */}
           <div
             className={`
-              fixed lg:relative lg:w-80 w-64 bg-white shadow-lg lg:shadow-none 
+              fixed lg:relative lg:w-72 w-64 bg-white shadow-lg lg:shadow-none 
               transform transition-transform duration-300 ease-in-out z-50
               h-full flex flex-col
               ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
@@ -757,7 +757,7 @@ export default function Home() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                   <h3 className="font-semibold text-white">
-                    Active Now ({onlineUsers.length})
+                    Active ({onlineUsers.length})
                   </h3>
                 </div>
                 <button
@@ -787,7 +787,7 @@ export default function Home() {
 
           {/* Chat Area */}
           <div className="flex-1 flex flex-col bg-white shadow-lg lg:shadow-none rounded-t-xl lg:rounded-none overflow-hidden m-2 lg:m-0">
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
               {isLoading && (
                 <p className="text-center text-gray-500 mt-8">
                   Loading messages...
@@ -813,14 +813,14 @@ export default function Home() {
             </div>
 
             {/* Input Area */}
-            <form onSubmit={sendMessage} className="border-t p-4 flex-shrink-0">
+            <form onSubmit={sendMessage} className="border-t p-3 sm:p-4 flex-shrink-0">
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   placeholder="Type a message..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className="flex-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   maxLength={500}
                 />
                 <button
