@@ -56,10 +56,11 @@ export default function Home() {
   const [isJoined, setIsJoined] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
-  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
+  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Check for saved username on component mount
   useEffect(() => {
@@ -331,7 +332,7 @@ export default function Home() {
       console.error("Error adding reaction:", error);
     }
 
-    setShowReactionPicker(null);
+    setHoveredMessageId(null);
   };
 
   const getReactionCounts = (reactions?: Reaction[]) => {
@@ -351,6 +352,19 @@ export default function Home() {
       }
     });
     return Array.from(unique.values());
+  };
+
+  const handleMouseEnter = (messageId: string) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setHoveredMessageId(messageId);
+  };
+
+  const handleMouseLeave = () => {
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredMessageId(null);
+    }, 300);
   };
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -629,6 +643,7 @@ export default function Home() {
               {messages.map((message) => {
                 const reactionCounts = getReactionCounts(message.reactions);
                 const uniqueReactions = getUniqueReactions(message.reactions);
+                const isHovered = hoveredMessageId === message.id;
                 
                 return (
                   <div
@@ -637,8 +652,26 @@ export default function Home() {
                       message.userId === userIdRef.current
                         ? "justify-end"
                         : "justify-start"
-                    } relative group`}
+                    } relative mb-4`}
+                    onMouseEnter={() => handleMouseEnter(message.id)}
+                    onMouseLeave={handleMouseLeave}
                   >
+                    {/* Reaction Picker - Shows on hover at the top of message */}
+                    {isHovered && (
+                      <div className={`absolute -top-12 ${message.userId === userIdRef.current ? "right-0" : "left-0"} bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20`}>
+                        {REACTIONS.map((reaction) => (
+                          <button
+                            key={reaction}
+                            onClick={() => addReaction(message.id, reaction)}
+                            className="hover:bg-gray-100 p-2 rounded transition-colors text-xl"
+                          >
+                            {reaction}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Message Bubble */}
                     <div
                       className={`max-w-[70%] rounded-lg p-3 ${
                         message.userId === userIdRef.current
@@ -656,23 +689,6 @@ export default function Home() {
                       </div>
                       <p className="break-words">{message.text}</p>
                       
-                      {/* Reactions Display */}
-                      {uniqueReactions.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {uniqueReactions.map((reaction, idx) => (
-                            <div
-                              key={idx}
-                              className="inline-flex items-center gap-1 bg-white/20 rounded-full px-2 py-0.5 text-sm"
-                            >
-                              <span>{reaction.type}</span>
-                              <span className="text-xs">
-                                {reactionCounts[reaction.type]}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
                       {message.userId === userIdRef.current && message.status && (
                         <div className="mt-1 flex justify-end">
                           {getStatusIcon(message.status)}
@@ -680,27 +696,19 @@ export default function Home() {
                       )}
                     </div>
                     
-                    {/* Reaction Button */}
-                    <button
-                      onClick={() => setShowReactionPicker(showReactionPicker === message.id ? null : message.id)}
-                      className="absolute -right-8 top-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-200 hover:bg-gray-300 rounded-full p-1"
-                    >
-                      <svg className="h-4 w-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </button>
-                    
-                    {/* Reaction Picker */}
-                    {showReactionPicker === message.id && (
-                      <div className="absolute -top-12 left-0 bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-10">
-                        {REACTIONS.map((reaction) => (
-                          <button
-                            key={reaction}
-                            onClick={() => addReaction(message.id, reaction)}
-                            className="hover:bg-gray-100 p-2 rounded transition-colors text-xl"
+                    {/* Reactions Display - Below the message bubble */}
+                    {uniqueReactions.length > 0 && (
+                      <div className={`absolute -bottom-6 ${message.userId === userIdRef.current ? "right-0" : "left-0"} flex flex-wrap gap-1`}>
+                        {uniqueReactions.map((reaction, idx) => (
+                          <div
+                            key={idx}
+                            className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm"
                           >
-                            {reaction}
-                          </button>
+                            <span>{reaction.type}</span>
+                            <span className="text-xs text-gray-600">
+                              {reactionCounts[reaction.type]}
+                            </span>
+                          </div>
                         ))}
                       </div>
                     )}
