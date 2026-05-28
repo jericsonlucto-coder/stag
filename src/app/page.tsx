@@ -219,7 +219,7 @@ function ReactionPicker({
   onReact: (type: ReactionType) => void;
 }) {
   return (
-    <div className="bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20">
+    <div className="bg-white rounded-lg shadow-lg border p-1.5 flex gap-0.5 z-20">
       {REACTIONS.map((reaction) => {
         const isActive = sanitizeReactions(reactions || []).some(
           (r) => r.userId === userId && r.type === reaction
@@ -228,7 +228,7 @@ function ReactionPicker({
           <button
             key={reaction}
             onClick={() => onReact(reaction)}
-            className={`hover:bg-gray-100 p-1.5 sm:p-2 rounded transition-colors text-lg sm:text-xl ${
+            className={`hover:bg-gray-100 p-1 rounded transition-colors text-base ${
               isActive ? "bg-blue-100" : ""
             }`}
           >
@@ -251,7 +251,7 @@ function ReactionDisplay({
   const unique = getUniqueReactions(reactions);
   if (unique.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1 mt-1">
       {unique.map((reaction, idx) => {
         const isActive = sanitizeReactions(reactions || []).some(
           (r) => r.userId === userId && r.type === reaction.type
@@ -259,11 +259,11 @@ function ReactionDisplay({
         return (
           <div
             key={idx}
-            className={`inline-flex items-center gap-1 bg-white border rounded-full px-1.5 py-0.5 text-xs shadow-sm ${
+            className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-1.5 py-0.5 text-xs shadow-sm ${
               isActive ? "border-blue-500 bg-blue-50" : "border-gray-200"
             }`}
           >
-            <span>{reaction.type}</span>
+            <span className="text-sm">{reaction.type}</span>
             <span className="text-xs text-gray-600">{counts[reaction.type]}</span>
           </div>
         );
@@ -290,15 +290,15 @@ function MessageBubble({
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-5`}>
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-4`}>
       <div
         className="relative max-w-[75%] sm:max-w-[65%] md:max-w-[60%]"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        {/* Reaction Picker */}
+        {/* Reaction Picker - Shows on hover at the top of bubble */}
         {isHovered && (
-          <div className={`absolute -top-10 ${isOwn ? "right-0" : "left-0"}`}>
+          <div className={`absolute -top-8 ${isOwn ? "right-0" : "left-0"} z-10`}>
             <ReactionPicker
               reactions={message.reactions}
               userId={currentUserId}
@@ -325,9 +325,9 @@ function MessageBubble({
             </div>
           )}
         </div>
-        {/* Reactions */}
+        {/* Reactions Display - Below the bubble */}
         {uniqueReactions.length > 0 && (
-          <div className={`absolute -bottom-5 ${isOwn ? "right-0" : "left-0"}`}>
+          <div className="mt-1">
             <ReactionDisplay
               reactions={message.reactions}
               userId={currentUserId}
