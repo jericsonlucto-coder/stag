@@ -1,5 +1,4 @@
 "use client";
-
 import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
@@ -31,7 +30,6 @@ interface User {
   lastActive: number;
 }
 
-// Firebase message structure
 interface FirebaseMessage {
   text: string;
   username: string;
@@ -46,7 +44,6 @@ const generateId = () => {
 };
 
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
-
 const REACTIONS: ReactionType[] = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 export default function Home() {
@@ -66,43 +63,33 @@ export default function Home() {
   useEffect(() => {
     const savedUsername = localStorage.getItem("chat-username");
     const savedUserId = localStorage.getItem("chat-userId");
-    
     if (savedUsername && savedUserId) {
-      console.log("Found saved username:", savedUsername);
       setUsername(savedUsername);
       userIdRef.current = savedUserId;
       setIsJoined(true);
     }
   }, []);
 
-  // Update user's last active time
   const updateLastActive = useCallback(async () => {
     if (!isJoined) return;
-    
     try {
       await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          lastActive: Date.now(),
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lastActive: Date.now() }),
       });
     } catch (error) {
       console.error("Error updating last active:", error);
     }
   }, [isJoined]);
 
-  // Load online users from Firebase
   const loadOnlineUsers = useCallback(async () => {
     try {
       const response = await fetch(`${FIREBASE_DB_URL}/users.json`);
       const data: Record<string, any> = await response.json();
-      
       const now = Date.now();
       const activeUsers: User[] = [];
-      
+
       if (data) {
         Object.keys(data).forEach((key) => {
           const user = data[key];
@@ -123,26 +110,25 @@ export default function Home() {
           }
         });
       }
-      
+
       activeUsers.sort((a, b) => {
         if (a.id === userIdRef.current) return -1;
         if (b.id === userIdRef.current) return 1;
         return (a.username || "").localeCompare(b.username || "");
       });
-      
+
       setOnlineUsers(activeUsers);
     } catch (error) {
       console.error("Error loading online users:", error);
     }
   }, []);
 
-  // Load messages from Firebase
   const loadMessages = useCallback(async () => {
     try {
       const response = await fetch(`${FIREBASE_DB_URL}/messages.json`);
       const data: Record<string, FirebaseMessage> = await response.json();
-      
       const loadedMessages: Message[] = [];
+
       if (data) {
         Object.keys(data).forEach((key) => {
           const msg = data[key];
@@ -154,12 +140,12 @@ export default function Home() {
               timestamp: msg.timestamp || Date.now(),
               userId: msg.userId || "",
               status: "delivered",
-              reactions: msg.reactions || [],
+              reactions: (msg.reactions || []).filter((r: any) => r !== null && r !== undefined),
             });
           }
         });
       }
-      
+
       loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
       setMessages(loadedMessages);
     } catch (error) {
@@ -169,7 +155,6 @@ export default function Home() {
     }
   }, []);
 
-  // Register user when joining chat
   const registerUser = useCallback(async () => {
     try {
       const userData = {
@@ -177,15 +162,11 @@ export default function Home() {
         joinedAt: Date.now(),
         lastActive: Date.now(),
       };
-      
       await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(userData),
       });
-      
       setTimeout(() => {
         loadOnlineUsers();
       }, 1000);
@@ -194,7 +175,6 @@ export default function Home() {
     }
   }, [username, loadOnlineUsers]);
 
-  // Remove user when leaving chat
   const removeUser = useCallback(async () => {
     try {
       await fetch(`${FIREBASE_DB_URL}/users/${userIdRef.current}.json`, {
@@ -208,15 +188,12 @@ export default function Home() {
   // Initial load when joining chat
   useEffect(() => {
     if (!isJoined) return;
-    
     registerUser();
     loadMessages();
-    
     userHeartbeatRef.current = setInterval(() => {
       updateLastActive();
       loadOnlineUsers();
     }, 30000);
-    
     return () => {
       if (userHeartbeatRef.current) {
         clearInterval(userHeartbeatRef.current);
@@ -228,11 +205,9 @@ export default function Home() {
   // Refresh online users every 5 seconds
   useEffect(() => {
     if (!isJoined) return;
-    
     const interval = setInterval(() => {
       loadOnlineUsers();
     }, 5000);
-    
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
 
@@ -251,12 +226,15 @@ export default function Home() {
     });
 
     const channel = pusher.subscribe("private-chat-channel");
-    
+
     channel.bind("new-message", (data: Message) => {
       setMessages((prevMessages: Message[]) => {
-        const exists = prevMessages.some(msg => msg.id === data.id);
+        const exists = prevMessages.some((msg) => msg.id === data.id);
         if (!exists) {
-          const newMessages: Message[] = [...prevMessages, { ...data, status: "delivered" }];
+          const newMessages: Message[] = [
+            ...prevMessages,
+            { ...data, status: "delivered" },
+          ];
           newMessages.sort((a, b) => a.timestamp - b.timestamp);
           return newMessages;
         }
@@ -264,132 +242,121 @@ export default function Home() {
       });
     });
 
-    channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction | null }) => {
-      setMessages((prevMessages: Message[]) =>
-        prevMessages.map((msg) => {
-          if (msg.id !== data.messageId) return msg;
-    
-          // null means a reaction was removed — reload reactions from Firebase
-          if (data.reaction === null) {
-            // Filter out stale reactions by re-fetching, but for now just return as-is
-            // The optimistic update already handled the sender's UI
-            return msg;
-          }
-    
-          // Check if reaction already exists to avoid duplicates
-          const alreadyExists = msg.reactions?.some(
-            (r) => r !== null && r.userId === data.reaction!.userId && r.type === data.reaction!.type
-          );
-          if (alreadyExists) return msg;
-    
-          return {
-            ...msg,
-            reactions: [...(msg.reactions || []).filter(r => r !== null), data.reaction!],
-          };
-        })
-      );
-    });
+    channel.bind(
+      "message-reaction",
+      (data: { messageId: string; reaction: Reaction | null }) => {
+        setMessages((prevMessages: Message[]) =>
+          prevMessages.map((msg) => {
+            if (msg.id !== data.messageId) return msg;
+
+            if (data.reaction === null) {
+              // Removal handled optimistically on sender's side
+              return msg;
+            }
+
+            const alreadyExists = msg.reactions?.some(
+              (r) =>
+                r !== null &&
+                r.userId === data.reaction!.userId &&
+                r.type === data.reaction!.type
+            );
+            if (alreadyExists) return msg;
+
+            return {
+              ...msg,
+              reactions: [
+                ...(msg.reactions || []).filter((r) => r !== null),
+                data.reaction!,
+              ],
+            };
+          })
+        );
+      }
+    );
+
+    return () => {
+      channel.unbind_all();
+      channel.unsubscribe();
+      pusher.disconnect();
+    };
+  }, [isJoined]); // <-- This closing was missing before
 
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
-    const message = messages.find(m => m.id === messageId);
-    
-    // Check if user already reacted with this emoji
+    const message = messages.find((m) => m.id === messageId);
     const hasReacted = message?.reactions?.some(
-      r => r.userId === userIdRef.current && r.type === reactionType
+      (r) => r !== null && r.userId === userIdRef.current && r.type === reactionType
     );
-    
+
     if (hasReacted) {
-      // Remove reaction if already exists
-      const updatedReactions = message?.reactions?.filter(
-        r => !(r.userId === userIdRef.current && r.type === reactionType)
-      ) || [];
-      
-      // Update UI optimistically
+      const updatedReactions =
+        message?.reactions?.filter(
+          (r) =>
+            r !== null &&
+            !(r.userId === userIdRef.current && r.type === reactionType)
+        ) || [];
+
       setMessages((prevMessages: Message[]) =>
         prevMessages.map((msg) =>
-          msg.id === messageId
-            ? { ...msg, reactions: updatedReactions }
-            : msg
+          msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg
         )
       );
-      
-      // Save to Firebase
+
       try {
         await fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updatedReactions),
         });
-        
-        // Trigger Pusher event for reaction removal
         await fetch("/api/send-reaction", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messageId,
-            reaction: null, // Send null to indicate removal
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId, reaction: null }),
         });
       } catch (error) {
         console.error("Error removing reaction:", error);
       }
     } else {
-      // Add new reaction
       const reaction: Reaction = {
         type: reactionType,
         userId: userIdRef.current,
         username: username,
         timestamp: Date.now(),
       };
-      
-      const updatedReactions = [...(message?.reactions || []), reaction];
-      
-      // Update UI optimistically
+
+      const updatedReactions = [
+        ...(message?.reactions || []).filter((r) => r !== null),
+        reaction,
+      ];
+
       setMessages((prevMessages: Message[]) =>
         prevMessages.map((msg) =>
-          msg.id === messageId
-            ? { ...msg, reactions: updatedReactions }
-            : msg
+          msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg
         )
       );
-      
-      // Save to Firebase
+
       try {
         await fetch(`${FIREBASE_DB_URL}/messages/${messageId}/reactions.json`, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updatedReactions),
         });
-        
-        // Trigger Pusher event for real-time reaction update
         await fetch("/api/send-reaction", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messageId,
-            reaction,
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId, reaction }),
         });
       } catch (error) {
         console.error("Error adding reaction:", error);
       }
     }
-    
+
     setHoveredMessageId(null);
   };
 
   const getReactionCounts = (reactions?: Reaction[]) => {
     if (!reactions) return {};
     return reactions
-      .filter((reaction) => reaction !== null && reaction !== undefined)
+      .filter((r) => r !== null && r !== undefined)
       .reduce((acc: Record<string, number>, reaction) => {
         acc[reaction.type] = (acc[reaction.type] || 0) + 1;
         return acc;
@@ -400,7 +367,7 @@ export default function Home() {
     if (!reactions) return [];
     const unique = new Map();
     reactions
-      .filter((reaction) => reaction !== null && reaction !== undefined)
+      .filter((r) => r !== null && r !== undefined)
       .forEach((reaction) => {
         if (!unique.has(reaction.type)) {
           unique.set(reaction.type, reaction);
@@ -409,7 +376,10 @@ export default function Home() {
     return Array.from(unique.values());
   };
 
-  const hasUserReacted = (reactions: Reaction[] | undefined, reactionType: ReactionType) => {
+  const hasUserReacted = (
+    reactions: Reaction[] | undefined,
+    reactionType: ReactionType
+  ) => {
     return reactions
       ?.filter((r) => r !== null && r !== undefined)
       .some((r) => r.userId === userIdRef.current && r.type === reactionType);
@@ -442,11 +412,10 @@ export default function Home() {
       status: "sending",
       reactions: [],
     };
-    
+
     setInputMessage("");
-    
     setMessages((prevMessages: Message[]) => {
-      const exists = prevMessages.some(msg => msg.id === messageId);
+      const exists = prevMessages.some((msg) => msg.id === messageId);
       if (!exists) {
         const newMessages: Message[] = [...prevMessages, newMessage];
         newMessages.sort((a, b) => a.timestamp - b.timestamp);
@@ -458,25 +427,26 @@ export default function Home() {
     try {
       setMessages((prevMessages: Message[]) =>
         prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, status: "sent" as MessageStatus } : msg
+          msg.id === messageId
+            ? { ...msg, status: "sent" as MessageStatus }
+            : msg
         )
       );
 
       const response = await fetch("/api/send-message", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newMessage),
       });
 
       if (response.ok) {
         setMessages((prevMessages: Message[]) =>
           prevMessages.map((msg) =>
-            msg.id === messageId ? { ...msg, status: "delivered" as MessageStatus } : msg
+            msg.id === messageId
+              ? { ...msg, status: "delivered" as MessageStatus }
+              : msg
           )
         );
-        
         setTimeout(() => {
           setMessages((prevMessages: Message[]) =>
             prevMessages.map((msg) =>
@@ -487,7 +457,9 @@ export default function Home() {
       } else {
         setMessages((prevMessages: Message[]) =>
           prevMessages.map((msg) =>
-            msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
+            msg.id === messageId
+              ? { ...msg, status: "error" as MessageStatus }
+              : msg
           )
         );
       }
@@ -495,7 +467,9 @@ export default function Home() {
       console.error("Error sending message:", error);
       setMessages((prevMessages: Message[]) =>
         prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
+          msg.id === messageId
+            ? { ...msg, status: "error" as MessageStatus }
+            : msg
         )
       );
     }
@@ -530,8 +504,20 @@ export default function Home() {
         return (
           <div className="flex items-center gap-1 text-xs text-gray-500">
             <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+                fill="none"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
             </svg>
             <span>Sending...</span>
           </div>
@@ -539,8 +525,18 @@ export default function Home() {
       case "sent":
         return (
           <div className="flex items-center gap-1 text-xs text-blue-500">
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 13l4 4L19 7"
+              />
             </svg>
             <span>Sent</span>
           </div>
@@ -548,8 +544,18 @@ export default function Home() {
       case "delivered":
         return (
           <div className="flex items-center gap-1 text-xs text-green-500">
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
             <span>Delivered</span>
           </div>
@@ -557,8 +563,18 @@ export default function Home() {
       case "error":
         return (
           <div className="flex items-center gap-1 text-xs text-red-500">
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
             <span>Failed</span>
           </div>
@@ -622,7 +638,9 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Image src="/next.svg" alt="Logo" width={100} height={25} />
-            <h1 className="text-xl font-semibold text-gray-800">Real-time Chat</h1>
+            <h1 className="text-xl font-semibold text-gray-800">
+              Real-time Chat
+            </h1>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-600">Logged in as:</span>
@@ -644,13 +662,25 @@ export default function Home() {
           <div className="w-72 bg-white rounded-xl shadow-lg overflow-hidden flex-shrink-0">
             <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
               <div className="flex items-center gap-2">
-                <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                <svg
+                  className="h-5 w-5 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                  />
                 </svg>
-                <h3 className="font-semibold text-white">Active Now ({onlineUsers.length})</h3>
+                <h3 className="font-semibold text-white">
+                  Active Now ({onlineUsers.length})
+                </h3>
               </div>
             </div>
-            <div className="h-[calc(500px)] overflow-y-auto">
+            <div className="h-[500px] overflow-y-auto">
               {onlineUsers.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   No active users
@@ -664,11 +694,13 @@ export default function Home() {
                     }`}
                   >
                     <div className="relative">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
-                        user.id === userIdRef.current 
-                          ? "bg-gradient-to-br from-green-400 to-green-600"
-                          : "bg-gradient-to-br from-blue-400 to-indigo-500"
-                      }`}>
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
+                          user.id === userIdRef.current
+                            ? "bg-gradient-to-br from-green-400 to-green-600"
+                            : "bg-gradient-to-br from-blue-400 to-indigo-500"
+                        }`}
+                      >
                         {user.username && user.username.charAt(0).toUpperCase()}
                       </div>
                       <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
@@ -677,7 +709,9 @@ export default function Home() {
                       <p className="text-sm font-medium text-gray-800">
                         {user.username}
                         {user.id === userIdRef.current && (
-                          <span className="ml-2 text-xs text-green-600">(You)</span>
+                          <span className="ml-2 text-xs text-green-600">
+                            (You)
+                          </span>
                         )}
                       </p>
                       <p className="text-xs text-gray-500">Active now</p>
@@ -702,101 +736,111 @@ export default function Home() {
                 </div>
               )}
               {messages.map((message) => {
-              const reactionCounts = getReactionCounts(message.reactions);
-              const uniqueReactions = getUniqueReactions(message.reactions);
-              const isHovered = hoveredMessageId === message.id;
-            
-              return (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.userId === userIdRef.current
-                      ? "justify-end"
-                      : "justify-start"
-                  } mb-8`}
-                >
-                  {/* Wrapper to position reaction picker & bubble together */}
+                const reactionCounts = getReactionCounts(message.reactions);
+                const uniqueReactions = getUniqueReactions(message.reactions);
+                const isHovered = hoveredMessageId === message.id;
+
+                return (
                   <div
-                    className="relative max-w-[70%]"
-                    onMouseEnter={() => handleMouseEnter(message.id)}
-                    onMouseLeave={handleMouseLeave}
+                    key={message.id}
+                    className={`flex ${
+                      message.userId === userIdRef.current
+                        ? "justify-end"
+                        : "justify-start"
+                    } mb-8`}
                   >
-                    {/* Reaction Picker */}
-                    {isHovered && (
+                    {/* Wrapper to position reaction picker & bubble together */}
+                    <div
+                      className="relative max-w-[70%]"
+                      onMouseEnter={() => handleMouseEnter(message.id)}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      {/* Reaction Picker */}
+                      {isHovered && (
+                        <div
+                          className={`absolute -top-12 ${
+                            message.userId === userIdRef.current
+                              ? "right-0"
+                              : "left-0"
+                          } bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20`}
+                        >
+                          {REACTIONS.map((reaction) => {
+                            const isActive = hasUserReacted(
+                              message.reactions,
+                              reaction
+                            );
+                            return (
+                              <button
+                                key={reaction}
+                                onClick={() =>
+                                  addReaction(message.id, reaction)
+                                }
+                                className={`hover:bg-gray-100 p-2 rounded transition-colors text-xl ${
+                                  isActive ? "bg-blue-100" : ""
+                                }`}
+                              >
+                                {reaction}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Message Bubble */}
                       <div
-                        className={`absolute -top-12 ${
-                          message.userId === userIdRef.current ? "right-0" : "left-0"
-                        } bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20`}
+                        className={`rounded-lg p-3 ${
+                          message.userId === userIdRef.current
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
                       >
-                        {REACTIONS.map((reaction) => {
-                          const isActive = hasUserReacted(message.reactions, reaction);
-                          return (
-                            <button
-                              key={reaction}
-                              onClick={() => addReaction(message.id, reaction)}
-                              className={`hover:bg-gray-100 p-2 rounded transition-colors text-xl ${
-                                isActive ? "bg-blue-100" : ""
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-sm">
+                            {message.username}
+                          </span>
+                          <span className="text-xs opacity-75">
+                            {formatTime(message.timestamp)}
+                          </span>
+                        </div>
+                        <p className="break-words">{message.text}</p>
+                        {message.userId === userIdRef.current &&
+                          message.status && (
+                            <div className="mt-1 flex justify-end">
+                              {getStatusIcon(message.status)}
+                            </div>
+                          )}
+                      </div>
+
+                      {/* Reactions Display */}
+                      {uniqueReactions.length > 0 && (
+                        <div
+                          className={`absolute -bottom-6 ${
+                            message.userId === userIdRef.current
+                              ? "right-0"
+                              : "left-0"
+                          } flex flex-wrap gap-1`}
+                        >
+                          {uniqueReactions.map((reaction, idx) => (
+                            <div
+                              key={idx}
+                              className={`inline-flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm ${
+                                hasUserReacted(message.reactions, reaction.type)
+                                  ? "border-blue-500 bg-blue-50"
+                                  : ""
                               }`}
                             >
-                              {reaction}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-            
-                    {/* Message Bubble */}
-                    <div
-                      className={`rounded-lg p-3 ${
-                        message.userId === userIdRef.current
-                          ? "bg-blue-500 text-white"
-                          : "bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-sm">
-                          {message.username}
-                        </span>
-                        <span className="text-xs opacity-75">
-                          {formatTime(message.timestamp)}
-                        </span>
-                      </div>
-                      <p className="break-words">{message.text}</p>
-                      {message.userId === userIdRef.current && message.status && (
-                        <div className="mt-1 flex justify-end">
-                          {getStatusIcon(message.status)}
+                              <span>{reaction.type}</span>
+                              <span className="text-xs text-gray-600">
+                                {reactionCounts[reaction.type]}
+                              </span>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
-            
-                    {/* Reactions Display */}
-                    {uniqueReactions.length > 0 && (
-                      <div
-                        className={`absolute -bottom-6 ${
-                          message.userId === userIdRef.current ? "right-0" : "left-0"
-                        } flex flex-wrap gap-1`}
-                      >
-                        {uniqueReactions.map((reaction, idx) => (
-                          <div
-                            key={idx}
-                            className={`inline-flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm ${
-                              hasUserReacted(message.reactions, reaction.type)
-                                ? "border-blue-500 bg-blue-50"
-                                : ""
-                            }`}
-                          >
-                            <span>{reaction.type}</span>
-                            <span className="text-xs text-gray-600">
-                              {reactionCounts[reaction.type]}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
