@@ -12,10 +12,11 @@ interface Message {
   userId: string;
 }
 
-// Simple ID generator
 const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 };
+
+const FIREBASE_DB_URL = "https://your-project-default-rtdb.firebaseio.com";
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -26,46 +27,38 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
 
-  // Load messages from Firebase REST API
+  // Load messages from Firebase
+  const loadMessages = async () => {
+    try {
+      const response = await fetch(`${FIREBASE_DB_URL}/messages.json`);
+      const data = await response.json();
+      
+      const loadedMessages: Message[] = [];
+      if (data) {
+        Object.keys(data).forEach((key) => {
+          const msg = data[key];
+          loadedMessages.push({
+            id: key,
+            text: msg.text,
+            username: msg.username,
+            timestamp: msg.timestamp,
+            userId: msg.userId,
+          });
+        });
+      }
+      
+      loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
+      setMessages(loadedMessages);
+    } catch (error) {
+      console.error("Error loading messages:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isJoined) return;
-
-    const loadMessages = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch('https://chatto-659ec-default-rtdb.firebaseio.com/');
-        const data = await response.json();
-        
-        const loadedMessages: Message[] = [];
-        if (data) {
-          Object.keys(data).forEach((key) => {
-            const msg = data[key];
-            loadedMessages.push({
-              id: key,
-              text: msg.text,
-              username: msg.username,
-              timestamp: msg.timestamp,
-              userId: msg.userId,
-            });
-          });
-        }
-        
-        // Sort by timestamp
-        loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
-        setMessages(loadedMessages);
-      } catch (error) {
-        console.error("Error loading messages:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadMessages();
-    
-    // Poll for new messages every 2 seconds (for real-time updates)
-    const interval = setInterval(loadMessages, 2000);
-    
-    return () => clearInterval(interval);
   }, [isJoined]);
 
   // Auto-scroll to bottom
@@ -84,37 +77,10 @@ export default function Home() {
 
     const channel = pusher.subscribe("private-chat-channel");
     
-    channel.bind("new-message", (data: Message) => {
-      console.log("New message received:", data);
-      // Immediately refresh messages
-      fetchMessages();
+    channel.bind("new-message", () => {
+      // Reload messages when new message arrives
+      loadMessages();
     });
-
-    const fetchMessages = async () => {
-      try {
-        const response = await fetch('https://your-project-default-rtdb.firebaseio.com/messages.json');
-        const data = await response.json();
-        
-        const loadedMessages: Message[] = [];
-        if (data) {
-          Object.keys(data).forEach((key) => {
-            const msg = data[key];
-            loadedMessages.push({
-              id: key,
-              text: msg.text,
-              username: msg.username,
-              timestamp: msg.timestamp,
-              userId: msg.userId,
-            });
-          });
-        }
-        
-        loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
-        setMessages(loadedMessages);
-      } catch (error) {
-        console.error("Error fetching messages:", error);
-      }
-    };
 
     return () => {
       channel.unbind_all();
