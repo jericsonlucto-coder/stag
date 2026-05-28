@@ -68,6 +68,7 @@ export async function POST(request: Request) {
     if (message.isImage && message.imageUrl) {
       messageData.isImage = true;
       messageData.imageUrl = message.imageUrl;
+      console.log("Saving image message to Firebase, imageUrl length:", message.imageUrl.length);
     }
     
     // Save to Firebase Realtime Database
@@ -90,11 +91,18 @@ export async function POST(request: Request) {
       );
     }
     
-    // Create the payload for Pusher HTTP API with full message data
+    // Create the payload for Pusher HTTP API with full message data including image
     const pusherMessage = {
-      ...message,
       id: firebaseResult.name, // Use Firebase generated ID
+      text: message.text || "",
+      username: message.username,
+      timestamp: message.timestamp,
+      userId: message.userId,
+      isImage: message.isImage || false,
+      imageUrl: message.imageUrl || undefined,
     };
+    
+    console.log("Broadcasting to Pusher:", pusherMessage);
     
     const payload = {
       name: "new-message",
