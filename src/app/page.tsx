@@ -568,19 +568,26 @@ export default function Home() {
       const data: Record<string, FirebaseMessage> = await res.json();
       
       const olderMessages: Message[] = Object.entries(data || {})
-    .filter(([, msg]) => msg && (msg.text || msg.imageUrl))
-    .map(([key, msg]) => ({
-      id: key,
-      text: msg.text || "",
-      username: msg.username,
-      timestamp: msg.timestamp || Date.now(),
-      userId: msg.userId || "",
-      status: "delivered" as MessageStatus,
-      reactions: sanitizeReactions(msg.reactions || []),
-      imageUrl: msg.imageUrl,
-      isImage: msg.isImage || false,
-    }))
-    .sort((a, b) => a.timestamp - b.timestamp);
+      .filter(([, msg]) => msg && (msg.text || msg.imageUrl))
+      .map(([key, msg]) => {
+        const message: Message = {
+          id: key,
+          text: msg.text || "",
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered" as MessageStatus,
+          reactions: sanitizeReactions(msg.reactions || []),
+        };
+        
+        if (msg.isImage === true || msg.imageUrl) {
+          message.isImage = true;
+          message.imageUrl = msg.imageUrl;
+        }
+    
+    return message;
+  })
+  .sort((a, b) => a.timestamp - b.timestamp);
       
       if (olderMessages.length === 0 || olderMessages.length < MESSAGES_PER_PAGE) {
         setHasMoreMessages(false);
@@ -636,27 +643,50 @@ const loadMessages = useCallback(async () => {
     setTotalMessages(totalCount);
     
     const res = await api.getMessages(MESSAGES_PER_PAGE);
-    const data: Record<string, FirebaseMessage> = await res.json();
+    const data: Record<string, any> = await res.json();
+    
+    console.log("Raw Firebase data:", data);
     
     const loaded: Message[] = Object.entries(data || {})
-      .filter(([, msg]) => msg && (msg.text || msg.imageUrl)) // Allow messages with only images
-      .map(([key, msg]) => ({
-        id: key,
-        text: msg.text || "",
-        username: msg.username,
-        timestamp: msg.timestamp || Date.now(),
-        userId: msg.userId || "",
-        status: "delivered" as MessageStatus,
-        reactions: sanitizeReactions(msg.reactions || []),
-        imageUrl: msg.imageUrl,
-        isImage: msg.isImage || false,
-      }))
+      .filter(([, msg]) => msg && (msg.text || msg.imageUrl))
+      .map(([key, msg]) => {
+        const message: Message = {
+          id: key,
+          text: msg.text || "",
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered" as MessageStatus,
+          reactions: sanitizeReactions(msg.reactions || []),
+        };
+        
+        // Check if this is an image message
+        if (msg.isImage === true || msg.imageUrl) {
+          message.isImage = true;
+          message.imageUrl = msg.imageUrl;
+          console.log("Loaded image message:", message.id, message.imageUrl?.substring(0, 100));
+        }
+        
+        return message;
+      })
       .sort((a, b) => a.timestamp - b.timestamp);
     
-    console.log("Loaded messages with images:", loaded.filter(m => m.isImage).length);
+    console.log("Loaded messages count:", loaded.length);
+    console.log("Image messages count:", loaded.filter(m => m.isImage).length);
     setMessages(loaded);
     
-    // ... rest of the function
+    if (loaded.length > 0) {
+      const oldestMessageId = loaded[0].id;
+      const olderCheck = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
+      const olderData = await olderCheck.json();
+      setHasMoreMessages(Object.keys(olderData || {}).length > 0);
+    } else {
+      setHasMoreMessages(false);
+    }
+    
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    }, 100);
   } catch (err) {
     console.error("Error loading messages:", err);
   } finally {
@@ -743,50 +773,58 @@ const loadMessages = useCallback(async () => {
     }
   };
   
-  const sendImageMessage = async (imageUrl: string) => {
-    const messageId = generateId();
-    const newMessage: Message = {
-      id: messageId,
-      text: "",
-      username,
-      timestamp: Date.now(),
-      userId: userIdRef.current,
-      status: "sending",
-      reactions: [],
-      imageUrl: imageUrl,
-      isImage: true,
-    };
+ const sendImageMessage = async (imageUrl: string) => {
+  const messageId = generateId();
+  const newMessage: Message = {
+    id: messageId,
+    text: "",
+    username,
+    timestamp: Date.now(),
+    userId: userIdRef.current,
+    status: "sending",
+    reactions: [],
+    imageUrl: imageUrl,
+    isImage: true,
+  };
+  
+  console.log("Sending image message:", newMessage);
+  
+  const updateStatus = (status: MessageStatus | undefined) =>
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+    );
+  
+  // Add message to UI immediately
+  setMessages((prev) => {
+    if (prev.some((m) => m.id === messageId)) return prev;
+    return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+  });
+  
+  try {
+    updateStatus("sent");
+    const res = await api.sendMessage(newMessage);
+    console.log("Image message API response:", res);
     
-    const updateStatus = (status: MessageStatus | undefined) =>
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
-      );
-    
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === messageId)) return prev;
-      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-    });
-    
-    try {
-      updateStatus("sent");
-      const res = await api.sendMessage(newMessage);
-      if (res.ok) {
-        updateStatus("delivered");
-        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
-      } else {
-        updateStatus("error");
-      }
-    } catch (err) {
-      console.error("Error sending image:", err);
+    if (res.ok) {
+      const responseData = await res.json();
+      console.log("Image sent successfully:", responseData);
+      updateStatus("delivered");
+      setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+    } else {
+      console.error("Failed to send image message:", await res.text());
       updateStatus("error");
     }
-    
-    setIsUserScrolled(false);
-    setShowScrollButton(false);
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-  };
+  } catch (err) {
+    console.error("Error sending image:", err);
+    updateStatus("error");
+  }
+  
+  setIsUserScrolled(false);
+  setShowScrollButton(false);
+  setTimeout(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, 100);
+};
 
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => {
@@ -851,19 +889,30 @@ const loadMessages = useCallback(async () => {
     });
     const channel = pusher.subscribe("private-chat-channel");
     channel.bind("new-message", (data: Message) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data.id)) return prev;
-        const newMessages = [...prev, { ...data, status: "delivered" as MessageStatus }].sort(
-          (a, b) => a.timestamp - b.timestamp
-        );
-        
-        if (isUserScrolled) {
-          setNewMessageCount(prev => prev + 1);
-        }
-        
-        return newMessages;
-      });
-    });
+  console.log("New message received via Pusher:", data);
+  setMessages((prev) => {
+    if (prev.some((m) => m.id === data.id)) return prev;
+    
+    // Ensure the message has all required fields
+    const newMessage = {
+      ...data,
+      status: "delivered" as MessageStatus,
+      isImage: data.isImage || false,
+      imageUrl: data.imageUrl || undefined,
+    };
+    
+    console.log("Adding new message to UI:", newMessage);
+    const newMessages = [...prev, newMessage].sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
+    
+    if (isUserScrolled) {
+      setNewMessageCount(prev => prev + 1);
+    }
+    
+    return newMessages;
+  });
+});
     channel.bind(
       "message-reaction",
       (data: { messageId: string; reaction: Reaction | null }) => {
