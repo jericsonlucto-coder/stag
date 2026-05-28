@@ -690,79 +690,87 @@ export default function Home() {
                 </div>
               )}
               {messages.map((message) => {
-                const reactionCounts = getReactionCounts(message.reactions);
-                const uniqueReactions = getUniqueReactions(message.reactions);
-                const isHovered = hoveredMessageId === message.id;
-                
-                return (
+              const reactionCounts = getReactionCounts(message.reactions);
+              const uniqueReactions = getUniqueReactions(message.reactions);
+              const isHovered = hoveredMessageId === message.id;
+            
+              return (
+                <div
+                  key={message.id}
+                  className={`flex ${
+                    message.userId === userIdRef.current
+                      ? "justify-end"
+                      : "justify-start"
+                  } mb-8`}
+                >
+                  {/* Wrapper to position reaction picker & bubble together */}
                   <div
-                    key={message.id}
-                    className={`flex ${
-                      message.userId === userIdRef.current
-                        ? "justify-end"
-                        : "justify-start"
-                    } relative mb-6`}
+                    className="relative max-w-[70%]"
+                    onMouseEnter={() => handleMouseEnter(message.id)}
+                    onMouseLeave={handleMouseLeave}
                   >
-                    {/* Message Bubble with hover detection */}
+                    {/* Reaction Picker */}
+                    {isHovered && (
+                      <div
+                        className={`absolute -top-12 ${
+                          message.userId === userIdRef.current ? "right-0" : "left-0"
+                        } bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20`}
+                      >
+                        {REACTIONS.map((reaction) => {
+                          const isActive = hasUserReacted(message.reactions, reaction);
+                          return (
+                            <button
+                              key={reaction}
+                              onClick={() => addReaction(message.id, reaction)}
+                              className={`hover:bg-gray-100 p-2 rounded transition-colors text-xl ${
+                                isActive ? "bg-blue-100" : ""
+                              }`}
+                            >
+                              {reaction}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+            
+                    {/* Message Bubble */}
                     <div
-                      className="relative"
-                      onMouseEnter={() => handleMouseEnter(message.id)}
-                      onMouseLeave={handleMouseLeave}
+                      className={`rounded-lg p-3 ${
+                        message.userId === userIdRef.current
+                          ? "bg-blue-500 text-white"
+                          : "bg-gray-100 text-gray-800"
+                      }`}
                     >
-                      {/* Reaction Picker - Shows on hover at the top of message */}
-                      {isHovered && (
-                        <div className={`absolute -top-12 ${message.userId === userIdRef.current ? "right-0" : "left-0"} bg-white rounded-lg shadow-lg border p-2 flex gap-1 z-20`}>
-                          {REACTIONS.map((reaction) => {
-                            const isActive = hasUserReacted(message.reactions, reaction);
-                            return (
-                              <button
-                                key={reaction}
-                                onClick={() => addReaction(message.id, reaction)}
-                                className={`hover:bg-gray-100 p-2 rounded transition-colors text-xl ${
-                                  isActive ? "bg-blue-100" : ""
-                                }`}
-                              >
-                                {reaction}
-                              </button>
-                            );
-                          })}
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-sm">
+                          {message.username}
+                        </span>
+                        <span className="text-xs opacity-75">
+                          {formatTime(message.timestamp)}
+                        </span>
+                      </div>
+                      <p className="break-words">{message.text}</p>
+                      {message.userId === userIdRef.current && message.status && (
+                        <div className="mt-1 flex justify-end">
+                          {getStatusIcon(message.status)}
                         </div>
                       )}
-                      
-                      {/* Message Bubble */}
-                      <div
-                        className={`max-w-[70%] rounded-lg p-3 ${
-                          message.userId === userIdRef.current
-                            ? "bg-blue-500 text-white"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-sm">
-                            {message.username}
-                          </span>
-                          <span className="text-xs opacity-75">
-                            {formatTime(message.timestamp)}
-                          </span>
-                        </div>
-                        <p className="break-words">{message.text}</p>
-                        
-                        {message.userId === userIdRef.current && message.status && (
-                          <div className="mt-1 flex justify-end">
-                            {getStatusIcon(message.status)}
-                          </div>
-                        )}
-                      </div>
                     </div>
-                    
-                    {/* Reactions Display - Below the message bubble */}
+            
+                    {/* Reactions Display */}
                     {uniqueReactions.length > 0 && (
-                      <div className={`absolute -bottom-6 ${message.userId === userIdRef.current ? "right-0" : "left-0"} flex flex-wrap gap-1`}>
+                      <div
+                        className={`absolute -bottom-6 ${
+                          message.userId === userIdRef.current ? "right-0" : "left-0"
+                        } flex flex-wrap gap-1`}
+                      >
                         {uniqueReactions.map((reaction, idx) => (
                           <div
                             key={idx}
                             className={`inline-flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm ${
-                              hasUserReacted(message.reactions, reaction.type) ? "border-blue-500 bg-blue-50" : ""
+                              hasUserReacted(message.reactions, reaction.type)
+                                ? "border-blue-500 bg-blue-50"
+                                : ""
                             }`}
                           >
                             <span>{reaction.type}</span>
@@ -774,8 +782,9 @@ export default function Home() {
                       </div>
                     )}
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
               <div ref={messagesEndRef} />
             </div>
 
