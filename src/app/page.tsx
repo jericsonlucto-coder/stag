@@ -396,11 +396,62 @@ export default function Home() {
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isUserActive, setIsUserActive] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+
+  // ── Track user activity ──────────────────────────────────
+  const updateUserActivity = useCallback(() => {
+    if (!isJoined) return;
+    
+    // Set user as active
+    if (!isUserActive) {
+      setIsUserActive(true);
+      // Re-register user as active when they become active again
+      updateLastActive();
+      loadOnlineUsers();
+    }
+    
+    // Clear the inactivity timeout
+    if (activityTimeoutRef.current) {
+      clearTimeout(activityTimeoutRef.current);
+    }
+    
+    // Set a timeout to mark user as inactive after 2 minutes of no activity
+    activityTimeoutRef.current = setTimeout(() => {
+      setIsUserActive(false);
+      console.log("User marked as inactive due to no activity");
+    }, 120000); // 2 minutes
+  }, [isJoined, isUserActive, updateLastActive, loadOnlineUsers]);
+
+  // ── Track user events for activity ───────────────────────
+  useEffect(() => {
+    if (!isJoined) return;
+    
+    // Track various user events
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    const handleUserActivity = () => updateUserActivity();
+    
+    events.forEach(event => {
+      window.addEventListener(event, handleUserActivity);
+    });
+    
+    // Initial activity tracking
+    updateUserActivity();
+    
+    return () => {
+      events.forEach(event => {
+        window.removeEventListener(event, handleUserActivity);
+      });
+      if (activityTimeoutRef.current) {
+        clearTimeout(activityTimeoutRef.current);
+      }
+    };
+  }, [isJoined, updateUserActivity]);
 
   // ── Persistence ──────────────────────────────────────────
   useEffect(() => {
@@ -435,6 +486,9 @@ export default function Home() {
     } else if (!isNearTop) {
       setShowLoadMoreButton(false);
     }
+    
+    // Update activity on scroll
+    updateUserActivity();
   };
 
   // ── Load More Messages ───────────────────────────────────
@@ -462,11 +516,9 @@ export default function Home() {
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
-      // Check if there are more messages to load
       if (olderMessages.length === 0 || olderMessages.length < MESSAGES_PER_PAGE) {
         setHasMoreMessages(false);
       } else {
-        // Check if we've loaded all messages by comparing with total count
         const newTotalCount = messages.length + olderMessages.length;
         if (newTotalCount >= totalMessages) {
           setHasMoreMessages(false);
@@ -474,13 +526,11 @@ export default function Home() {
       }
       
       if (olderMessages.length > 0) {
-        // Save scroll position before adding messages
         const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
         const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
         
         setMessages(prev => [...olderMessages, ...prev]);
         
-        // Restore scroll position after messages are added
         setTimeout(() => {
           if (messagesContainerRef.current) {
             const newScrollHeight = messagesContainerRef.current.scrollHeight;
@@ -506,7 +556,6 @@ export default function Home() {
       const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
       const data = await res.json();
       
-      // If there's at least one message older than our oldest, show load more button when scrolled to top
       setHasMoreMessages(Object.keys(data || {}).length > 0);
     } catch (err) {
       console.error("Error checking for older messages:", err);
@@ -517,7 +566,6 @@ export default function Home() {
   const loadMessages = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Get total message count first
       const totalCount = await api.getMessagesCount();
       setTotalMessages(totalCount);
       
@@ -539,7 +587,6 @@ export default function Home() {
       
       setMessages(loaded);
       
-      // Check if there are more messages to load
       if (loaded.length > 0) {
         const oldestMessageId = loaded[0].id;
         const olderCheck = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
@@ -549,7 +596,6 @@ export default function Home() {
         setHasMoreMessages(false);
       }
       
-      // Scroll to bottom after initial load
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
       }, 100);
@@ -616,10 +662,11 @@ export default function Home() {
     if (!isJoined) return;
     try {
       await api.patchUser(userIdRef.current, { lastActive: Date.now() });
+      console.log("Last active updated for user:", username);
     } catch (err) {
       console.error("Error updating last active:", err);
     }
-  }, [isJoined]);
+  }, [isJoined, username]);
 
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => {
@@ -642,18 +689,39 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
 
-  // Check for older messages when messages change
   useEffect(() => {
     if (!isJoined || messages.length === 0) return;
     checkForOlderMessages();
   }, [isJoined, messages, checkForOlderMessages]);
 
-  // Auto-scroll to bottom only when user hasn't manually scrolled up
   useEffect(() => {
     if (!isUserScrolled && messagesEndRef.current && messages.length > 0 && !isLoadingMore) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isUserScrolled, isLoadingMore]);
+
+  // Update last active whenever user interacts with input
+  useEffect(() => {
+    if (!isJoined) return;
+    
+    const handleInputFocus = () => {
+      updateLastActive();
+      updateUserActivity();
+    };
+    
+    const inputElement = document.querySelector('input[type="text"]');
+    if (inputElement) {
+      inputElement.addEventListener('focus', handleInputFocus);
+      inputElement.addEventListener('click', handleInputFocus);
+    }
+    
+    return () => {
+      if (inputElement) {
+        inputElement.removeEventListener('focus', handleInputFocus);
+        inputElement.removeEventListener('click', handleInputFocus);
+      }
+    };
+  }, [isJoined, updateLastActive, updateUserActivity]);
 
   // ── Pusher ────────────────────────────────────────────────
   useEffect(() => {
@@ -670,7 +738,6 @@ export default function Home() {
           (a, b) => a.timestamp - b.timestamp
         );
         
-        // Increment new message count if user is scrolled up
         if (isUserScrolled) {
           setNewMessageCount(prev => prev + 1);
         }
@@ -706,6 +773,7 @@ export default function Home() {
 
   // ── Actions ───────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
+    updateUserActivity();
     const message = messages.find((m) => m.id === messageId);
     const cleanReactions = sanitizeReactions(message?.reactions || []);
     const hasReacted = cleanReactions.some(
@@ -746,11 +814,17 @@ export default function Home() {
     setIsUserScrolled(false);
     setShowScrollButton(false);
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    updateUserActivity();
   };
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !username) return;
+    
+    // Update user activity and ensure they're marked as active
+    updateUserActivity();
+    await updateLastActive();
+    
     const messageId = generateId();
     const newMessage: Message = {
       id: messageId,
@@ -784,7 +858,6 @@ export default function Home() {
       updateStatus("error");
     }
     
-    // Auto-scroll to bottom when sending a new message
     setIsUserScrolled(false);
     setShowScrollButton(false);
     setTimeout(() => {
@@ -811,6 +884,7 @@ export default function Home() {
   const handleMouseEnter = (messageId: string) => {
     clearTimeout(hoverTimeoutRef.current);
     setHoveredMessageId(messageId);
+    updateUserActivity();
   };
 
   const handleMouseLeave = () => {
@@ -964,9 +1038,9 @@ export default function Home() {
 
               {/* Chat Area */}
               <div className="flex-1 flex flex-col h-full relative">
-                {/* Load More Button - Only shows when user scrolls to top */}
+                {/* Load More Button */}
                 {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
-                  <div className="sticky top-0 z-10 p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b animate-slideDown">
+                  <div className="sticky top-0 z-10 p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b">
                     <button
                       onClick={loadMoreMessages}
                       disabled={isLoadingMore}
@@ -1059,6 +1133,8 @@ export default function Home() {
                         type="text"
                         value={inputMessage}
                         onChange={(e) => setInputMessage(e.target.value)}
+                        onFocus={updateUserActivity}
+                        onClick={updateUserActivity}
                         placeholder="Type a message..."
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                         maxLength={500}
