@@ -3,8 +3,6 @@
 import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import Pusher from "pusher-js";
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, query, orderBy, onSnapshot } from "firebase/firestore";
 
 interface Message {
   id: string;
@@ -19,24 +17,6 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 };
 
-// Firebase configuration - Add these in Cloudflare Dashboard
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
-};
-
-// Initialize Firebase
-let app: any;
-let db: any;
-if (typeof window !== 'undefined') {
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-}
-
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -46,37 +26,46 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
 
-  // Load messages from Firebase
+  // Load messages from Firebase REST API
   useEffect(() => {
-    if (!isJoined || !db) return;
+    if (!isJoined) return;
 
-    setIsLoading(true);
+    const loadMessages = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch('https://your-project-default-rtdb.firebaseio.com/messages.json');
+        const data = await response.json();
+        
+        const loadedMessages: Message[] = [];
+        if (data) {
+          Object.keys(data).forEach((key) => {
+            const msg = data[key];
+            loadedMessages.push({
+              id: key,
+              text: msg.text,
+              username: msg.username,
+              timestamp: msg.timestamp,
+              userId: msg.userId,
+            });
+          });
+        }
+        
+        // Sort by timestamp
+        loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
+        setMessages(loadedMessages);
+      } catch (error) {
+        console.error("Error loading messages:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadMessages();
     
-    const q = query(
-      collection(db, "messages"),
-      orderBy("timestamp", "asc")
-    );
-
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const loadedMessages: Message[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        loadedMessages.push({
-          id: doc.id,
-          text: data.text,
-          username: data.username,
-          timestamp: data.timestamp,
-          userId: data.userId,
-        });
-      });
-      setMessages(loadedMessages);
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Error loading messages:", error);
-      setIsLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Poll for new messages every 2 seconds (for real-time updates)
+    const interval = setInterval(loadMessages, 2000);
+    
+    return () => clearInterval(interval);
   }, [isJoined]);
 
   // Auto-scroll to bottom
@@ -84,11 +73,11 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Initialize Pusher
+  // Initialize Pusher for real-time updates
   useEffect(() => {
     if (!isJoined) return;
 
-    const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY || "bc4bbe143420c20c0e9d", {
+    const pusher = new Pusher("bc4bbe143420c20c0e9d", {
       cluster: "ap1",
       authEndpoint: "/api/pusher/auth",
     });
@@ -97,7 +86,35 @@ export default function Home() {
     
     channel.bind("new-message", (data: Message) => {
       console.log("New message received:", data);
+      // Immediately refresh messages
+      fetchMessages();
     });
+
+    const fetchMessages = async () => {
+      try {
+        const response = await fetch('https://your-project-default-rtdb.firebaseio.com/messages.json');
+        const data = await response.json();
+        
+        const loadedMessages: Message[] = [];
+        if (data) {
+          Object.keys(data).forEach((key) => {
+            const msg = data[key];
+            loadedMessages.push({
+              id: key,
+              text: msg.text,
+              username: msg.username,
+              timestamp: msg.timestamp,
+              userId: msg.userId,
+            });
+          });
+        }
+        
+        loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
+        setMessages(loadedMessages);
+      } catch (error) {
+        console.error("Error fetching messages:", error);
+      }
+    };
 
     return () => {
       channel.unbind_all();
