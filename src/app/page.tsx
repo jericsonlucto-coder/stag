@@ -541,14 +541,13 @@ export default function Home() {
 
     const channel = pusher.subscribe("private-chat-channel");
 
-    channel.bind("new-message", (data: Message) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data.id)) return prev;
-        return [...prev, { ...data, status: "delivered" }].sort(
-          (a, b) => a.timestamp - b.timestamp
-        );
+      channel.bind("new-message", (setMessages((prev) => {
+          if (prev.some((m) => m.id === data.id)) return prev;
+          return [...prev, { ...data, status: "delivered" as MessageStatus }].sort( // 👈 add cast
+            (a, b) => a.timestamp - b.timestamp
+          );
+        });
       });
-    });
 
     channel.bind(
       "message-reaction",
@@ -642,10 +641,10 @@ export default function Home() {
         prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
       );
 
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === messageId)) return prev;
-      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-    });
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === messageId)) return prev;
+        return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+      });
 
     try {
       updateStatus("sent");
