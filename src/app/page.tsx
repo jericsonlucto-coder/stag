@@ -102,10 +102,9 @@ const api = {
       return 0;
     }
   },
-  getMessages: (limit?: number, startAfter?: string) => {
+  getMessages: (limit?: number) => {
     let url = `${FIREBASE_DB_URL}/messages.json?orderBy="$key"`;
     if (limit) url += `&limitToLast=${limit}`;
-    if (startAfter) url += `&startAfter="${startAfter}"`;
     return fetch(url);
   },
   getMessagesBefore: (endBefore: string, limit: number) => {
@@ -389,6 +388,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
   const [totalMessages, setTotalMessages] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
@@ -419,6 +419,7 @@ export default function Home() {
     
     const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    const isNearTop = scrollTop < 50;
     
     setIsUserScrolled(!isNearBottom);
     setShowScrollButton(!isNearBottom && scrollHeight > clientHeight);
@@ -426,6 +427,13 @@ export default function Home() {
     // Reset new message count when user scrolls to bottom
     if (isNearBottom && newMessageCount > 0) {
       setNewMessageCount(0);
+    }
+    
+    // Show load more button when user scrolls near top and there are more messages
+    if (isNearTop && hasMoreMessages && !isLoadingMore && messages.length > 0) {
+      setShowLoadMoreButton(true);
+    } else if (!isNearTop) {
+      setShowLoadMoreButton(false);
     }
   };
 
@@ -455,7 +463,7 @@ export default function Home() {
         .sort((a, b) => a.timestamp - b.timestamp);
       
       // Check if there are more messages to load
-      if (olderMessages.length === 0) {
+      if (olderMessages.length === 0 || olderMessages.length < MESSAGES_PER_PAGE) {
         setHasMoreMessages(false);
       } else {
         // Check if we've loaded all messages by comparing with total count
@@ -479,6 +487,7 @@ export default function Home() {
             const heightDifference = newScrollHeight - scrollHeightBefore;
             messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
           }
+          setShowLoadMoreButton(false);
         }, 100);
       }
     } catch (err) {
@@ -497,7 +506,7 @@ export default function Home() {
       const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
       const data = await res.json();
       
-      // If there's at least one message older than our oldest, show load more button
+      // If there's at least one message older than our oldest, show load more button when scrolled to top
       setHasMoreMessages(Object.keys(data || {}).length > 0);
     } catch (err) {
       console.error("Error checking for older messages:", err);
@@ -512,7 +521,7 @@ export default function Home() {
       const totalCount = await api.getMessagesCount();
       setTotalMessages(totalCount);
       
-      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&limitToLast=${MESSAGES_PER_PAGE}`);
+      const res = await api.getMessages(MESSAGES_PER_PAGE);
       const data: Record<string, FirebaseMessage> = await res.json();
       
       const loaded: Message[] = Object.entries(data || {})
@@ -955,9 +964,9 @@ export default function Home() {
 
               {/* Chat Area */}
               <div className="flex-1 flex flex-col h-full relative">
-                {/* Load More Button - Always show at top if there are older messages */}
-                {hasMoreMessages && !isLoading && messages.length > 0 && (
-                  <div className="sticky top-0 z-10 p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b">
+                {/* Load More Button - Only shows when user scrolls to top */}
+                {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
+                  <div className="sticky top-0 z-10 p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b animate-slideDown">
                     <button
                       onClick={loadMoreMessages}
                       disabled={isLoadingMore}
@@ -976,7 +985,12 @@ export default function Home() {
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
-                          Load older messages ({totalMessages - messages.length} remaining)
+                          Load older messages
+                          {totalMessages > messages.length && (
+                            <span className="text-xs text-gray-500">
+                              ({totalMessages - messages.length} remaining)
+                            </span>
+                          )}
                         </>
                       )}
                     </button>
