@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
 
 interface Message {
@@ -36,9 +36,10 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
 
-  // Load messages from Firebase
-  const loadMessages = async () => {
+  // Load messages from Firebase - wrapped in useCallback to prevent recreation
+  const loadMessages = useCallback(async () => {
     try {
+      console.log("Loading messages from Firebase...");
       const response = await fetch(`${FIREBASE_DB_URL}/messages.json`);
       const data: Record<string, FirebaseMessage> = await response.json();
       
@@ -57,18 +58,20 @@ export default function Home() {
       }
       
       loadedMessages.sort((a, b) => a.timestamp - b.timestamp);
+      console.log("Loaded messages:", loadedMessages.length);
       setMessages(loadedMessages);
     } catch (error) {
       console.error("Error loading messages:", error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
+  // Initial load when joining chat
   useEffect(() => {
     if (!isJoined) return;
     loadMessages();
-  }, [isJoined]);
+  }, [isJoined, loadMessages]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -79,6 +82,7 @@ export default function Home() {
   useEffect(() => {
     if (!isJoined) return;
 
+    console.log("Initializing Pusher...");
     const pusher = new Pusher("bc4bbe143420c20c0e9d", {
       cluster: "ap1",
       authEndpoint: "/api/pusher-auth",
@@ -86,9 +90,19 @@ export default function Home() {
 
     const channel = pusher.subscribe("private-chat-channel");
     
-    channel.bind("new-message", () => {
-      // Reload messages when new message arrives
-      loadMessages();
+    channel.bind("new-message", (data: Message) => {
+      console.log("New message received via Pusher:", data);
+      // Immediately add the message to the UI without reloading all messages
+      setMessages((prevMessages) => {
+        // Check if message already exists to avoid duplicates
+        const exists = prevMessages.some(msg => msg.id === data.id);
+        if (!exists) {
+          const newMessages = [...prevMessages, data];
+          newMessages.sort((a, b) => a.timestamp - b.timestamp);
+          return newMessages;
+        }
+        return prevMessages;
+      });
     });
 
     return () => {
@@ -110,6 +124,8 @@ export default function Home() {
       userId: userIdRef.current,
     };
 
+    console.log("Sending message:", newMessage);
+
     try {
       const response = await fetch("/api/send-message", {
         method: "POST",
@@ -120,19 +136,33 @@ export default function Home() {
       });
 
       if (response.ok) {
+        console.log("Message sent successfully");
         setInputMessage("");
+        // Optimistically add message to UI
+        setMessages((prevMessages) => {
+          const exists = prevMessages.some(msg => msg.id === newMessage.id);
+          if (!exists) {
+            const newMessages = [...prevMessages, newMessage];
+            newMessages.sort((a, b) => a.timestamp - b.timestamp);
+            return newMessages;
+          }
+          return prevMessages;
+        });
       } else {
         const error = await response.json();
         console.error("Failed to send message:", error);
+        alert("Failed to send message. Please try again.");
       }
     } catch (error) {
       console.error("Error sending message:", error);
+      alert("Error sending message. Please check your connection.");
     }
   };
 
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (username.trim()) {
+      console.log("User joined:", username);
       setIsJoined(true);
     }
   };
