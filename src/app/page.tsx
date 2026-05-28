@@ -312,7 +312,7 @@ function MessageBubble({
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} ${hasReactions ? 'mb-6 sm:mb-7' : 'mb-2 sm:mb-3'}`}>
       <div
-        className="relative max-w-[90%] sm:max-w-[75%] md:max-w-[65%]"
+        className="relative max-w-[85%] sm:max-w-[70%] md:max-w-[60%]"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
@@ -328,7 +328,7 @@ function MessageBubble({
         )}
         {/* Bubble */}
         <div
-          className={`rounded-lg p-1.5 sm:p-2.5 ${
+          className={`rounded-lg p-1.5 sm:p-2.5 break-words ${
             isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"
           }`}
         >
@@ -336,7 +336,7 @@ function MessageBubble({
             <span className="font-semibold text-[11px] sm:text-sm truncate max-w-[100px] sm:max-w-none">
               {message.username}
             </span>
-            <span className="text-[8px] sm:text-xs opacity-75">
+            <span className="text-[8px] sm:text-xs opacity-75 flex-shrink-0">
               {formatTime(message.timestamp)}
             </span>
           </div>
@@ -345,23 +345,16 @@ function MessageBubble({
               <img
                 src={message.imageUrl}
                 alt="Shared image"
-                className="max-w-full rounded-lg max-h-64 object-cover cursor-pointer"
+                className="max-w-full rounded-lg max-h-48 sm:max-h-64 object-cover cursor-pointer"
                 onClick={() => window.open(message.imageUrl, '_blank')}
                 onError={(e) => {
                   console.error("Image failed to load:", message.imageUrl);
                   e.currentTarget.style.display = 'none';
-                  const parent = e.currentTarget.parentElement;
-                  if (parent) {
-                    const errorText = document.createElement('p');
-                    errorText.textContent = 'Failed to load image';
-                    errorText.className = 'text-red-500 text-xs';
-                    parent.appendChild(errorText);
-                  }
                 }}
               />
             </div>
           ) : (
-            <p className="break-words text-[11px] sm:text-sm">{message.text}</p>
+            <p className="break-words text-[11px] sm:text-sm overflow-hidden">{message.text}</p>
           )}
           {isOwn && message.status && (
             <div className="mt-0.5 flex justify-end">
@@ -1087,7 +1080,6 @@ export default function Home() {
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Hamburger Menu Button - Mobile Only */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1097,7 +1089,6 @@ export default function Home() {
               </svg>
             </button>
             
-            {/* Desktop User Info */}
             <div className="hidden sm:flex items-center gap-3">
               <span className="text-sm text-gray-600">Logged in as:</span>
               <span className="font-medium text-gray-800 truncate max-w-[150px]">{username}</span>
@@ -1109,7 +1100,6 @@ export default function Home() {
               </button>
             </div>
             
-            {/* Mobile User Info */}
             <div className="sm:hidden flex items-center gap-1">
               <span className="text-xs font-medium text-gray-800 truncate max-w-[100px]">{username}</span>
             </div>
@@ -1122,12 +1112,12 @@ export default function Home() {
         <div className="w-full lg:max-w-[70%] h-full">
           <div className="bg-white rounded-lg sm:rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
             <div className="flex flex-row h-full">
-              {/* Online Users Sidebar - Hidden on mobile by default */}
+              {/* Online Users Sidebar - Fixed width */}
               <div
                 className={`
                   fixed lg:relative lg:block lg:w-64 w-64 bg-white border-r z-50
                   transform transition-transform duration-300 ease-in-out
-                  h-full overflow-y-auto
+                  h-full overflow-y-auto flex-shrink-0
                   ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
                   lg:translate-x-0
                 `}
@@ -1175,8 +1165,8 @@ export default function Home() {
                 />
               )}
 
-              {/* Chat Area */}
-              <div className="flex-1 flex flex-col h-full relative">
+              {/* Chat Area - Flexible but constrained */}
+              <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
                 {/* Load More Button */}
                 {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
                   <div className="sticky top-0 z-10 p-1 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b">
