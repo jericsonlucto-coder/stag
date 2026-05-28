@@ -260,8 +260,8 @@ function ReactionDisplay({
         return (
           <div
             key={idx}
-            className={`inline-flex items-center gap-0.5 bg-white/95 backdrop-blur-sm border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
-              isActive ? "border-blue-500 bg-blue-100" : "border-gray-300 bg-white/95"
+            className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
+              isActive ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white"
             }`}
           >
             <span className="text-[10px] sm:text-sm">{reaction.type}</span>
@@ -291,7 +291,7 @@ function MessageBubble({
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-3 sm:mb-4`}>
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-4 sm:mb-5`}>
       <div
         className="relative max-w-[90%] sm:max-w-[75%] md:max-w-[65%]"
         onMouseEnter={onMouseEnter}
@@ -328,13 +328,15 @@ function MessageBubble({
             </div>
           )}
         </div>
-        {/* Reactions Display - Positioned at bottom corners, 1/4 overlay */}
+        {/* Reactions Display - Positioned below bubble, only 1/4 overlaps */}
         {uniqueReactions.length > 0 && (
-          <div className={`absolute -bottom-1 ${isOwn ? "right-0" : "left-0"} z-5`}>
-            <ReactionDisplay
-              reactions={message.reactions}
-              userId={currentUserId}
-            />
+          <div className={`absolute -bottom-3 ${isOwn ? "right-0" : "left-0"} z-5`}>
+            <div className="translate-y-2">
+              <ReactionDisplay
+                reactions={message.reactions}
+                userId={currentUserId}
+              />
+            </div>
           </div>
         )}
       </div>
