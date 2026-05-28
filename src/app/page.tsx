@@ -291,7 +291,7 @@ function MessageBubble({
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-4 sm:mb-5`}>
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-3 sm:mb-4`}>
       <div
         className="relative max-w-[90%] sm:max-w-[75%] md:max-w-[65%]"
         onMouseEnter={onMouseEnter}
@@ -321,16 +321,16 @@ function MessageBubble({
               {formatTime(message.timestamp)}
             </span>
           </div>
-          <p className="break-words text-[11px] sm:text-sm pb-1">{message.text}</p>
+          <p className="break-words text-[11px] sm:text-sm">{message.text}</p>
           {isOwn && message.status && (
             <div className="mt-0.5 flex justify-end">
               <StatusIcon status={message.status} />
             </div>
           )}
         </div>
-        {/* Reactions Display - Positioned at bottom corners, slightly inside */}
+        {/* Reactions Display - Positioned at bottom corners, 1/4 overlay */}
         {uniqueReactions.length > 0 && (
-          <div className={`absolute -bottom-2 ${isOwn ? "right-1" : "left-1"} z-5`}>
+          <div className={`absolute -bottom-1 ${isOwn ? "right-0" : "left-0"} z-5`}>
             <ReactionDisplay
               reactions={message.reactions}
               userId={currentUserId}
