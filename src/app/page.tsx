@@ -274,7 +274,7 @@ function MessageBubble({
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-5`}>
       <div
-        className="relative max-w-[75%] sm:max-w-[60%] md:max-w-[55%]"
+        className="relative max-w-[75%] sm:max-w-[65%] md:max-w-[60%]"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
@@ -689,150 +689,153 @@ export default function Home() {
 
   // ── Chat Screen ───────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-t-xl shadow-lg border-b">
-          <div className="px-4 py-3 flex justify-between items-center">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <Image src="/next.svg" alt="Logo" width={60} height={15} className="sm:w-[70px]" />
-              <h1 className="text-base sm:text-lg font-semibold text-gray-800">
-                Chat
-              </h1>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3">
-              {/* Hamburger Menu Button - Mobile */}
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* Header - Full width at top */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="px-4 py-3 flex justify-between items-center max-w-[70%] mx-auto">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Image src="/next.svg" alt="Logo" width={60} height={15} className="sm:w-[70px]" />
+            <h1 className="text-base sm:text-lg font-semibold text-gray-800">
+              Chat
+            </h1>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Hamburger Menu Button - Mobile */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            
+            {/* Desktop User Info */}
+            <div className="hidden sm:flex items-center gap-3">
+              <span className="text-sm text-gray-600">Logged in as:</span>
+              <span className="font-medium text-gray-800">{username}</span>
               <button
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                onClick={clearSavedUser}
+                className="text-sm text-red-500 hover:text-red-600"
               >
-                <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
+                Leave
               </button>
-              
-              {/* Desktop User Info */}
-              <div className="hidden sm:flex items-center gap-3">
-                <span className="text-sm text-gray-600">Logged in as:</span>
-                <span className="font-medium text-gray-800">{username}</span>
-                <button
-                  onClick={clearSavedUser}
-                  className="text-sm text-red-500 hover:text-red-600"
-                >
-                  Leave
-                </button>
-              </div>
-              
-              {/* Mobile User Info */}
-              <div className="sm:hidden flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-800">{username}</span>
-              </div>
+            </div>
+            
+            {/* Mobile User Info */}
+            <div className="sm:hidden flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-800">{username}</span>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Main Content with Shadow */}
-        <div className="bg-white rounded-b-xl shadow-xl overflow-hidden">
-          <div className="flex flex-col lg:flex-row">
-            {/* Mobile Sidebar Overlay */}
-            {isMobileMenuOpen && (
+      {/* Chat Container - 70% width */}
+      <div className="flex items-center justify-center py-6 px-4">
+        <div className="w-full max-w-[70%]">
+          {/* Main Content with Shadow */}
+          <div className="bg-white rounded-xl shadow-xl overflow-hidden">
+            <div className="flex flex-col lg:flex-row">
+              {/* Mobile Sidebar Overlay */}
+              {isMobileMenuOpen && (
+                <div
+                  className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                />
+              )}
+              
+              {/* Online Users Sidebar */}
               <div
-                className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-                onClick={() => setIsMobileMenuOpen(false)}
-              />
-            )}
-            
-            {/* Online Users Sidebar */}
-            <div
-              className={`
-                fixed lg:relative lg:w-64 w-64 bg-white border-r lg:border-r
-                transform transition-transform duration-300 ease-in-out z-50
-                h-full lg:h-auto
-                ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-              `}
-            >
-              <div className="p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
-                    <h3 className="font-semibold text-white text-sm">
-                      Active ({onlineUsers.length})
-                    </h3>
-                  </div>
-                  <button
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="lg:hidden text-white hover:text-gray-200"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div className="h-96 lg:h-[500px] overflow-y-auto">
-                {onlineUsers.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8 text-sm">No active users</p>
-                ) : (
-                  onlineUsers.map((user) => (
-                    <UserListItem
-                      key={user.id}
-                      user={user}
-                      isCurrentUser={user.id === userIdRef.current}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Chat Area */}
-            <div className="flex-1 flex flex-col">
-              <div className="h-96 lg:h-[500px] overflow-y-auto p-3 space-y-3">
-                {isLoading && (
-                  <p className="text-center text-gray-500 mt-8 text-sm">
-                    Loading messages...
-                  </p>
-                )}
-                {!isLoading && messages.length === 0 && (
-                  <p className="text-center text-gray-500 mt-8 text-sm">
-                    No messages yet. Start the conversation!
-                  </p>
-                )}
-                {messages.map((message) => (
-                  <MessageBubble
-                    key={message.id}
-                    message={message}
-                    currentUserId={userIdRef.current}
-                    isHovered={hoveredMessageId === message.id}
-                    onMouseEnter={() => handleMouseEnter(message.id)}
-                    onMouseLeave={handleMouseLeave}
-                    onReact={(type) => addReaction(message.id, type)}
-                  />
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input Area with top border */}
-              <div className="border-t p-3">
-                <form onSubmit={sendMessage}>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder="Type a message..."
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      maxLength={500}
-                    />
+                className={`
+                  fixed lg:relative lg:w-64 w-64 bg-white border-r lg:border-r
+                  transform transition-transform duration-300 ease-in-out z-50
+                  h-full lg:h-auto
+                  ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+                `}
+              >
+                <div className="p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                      <h3 className="font-semibold text-white text-sm">
+                        Active ({onlineUsers.length})
+                      </h3>
+                    </div>
                     <button
-                      type="submit"
-                      className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="lg:hidden text-white hover:text-gray-200"
                     >
-                      Send
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
                     </button>
                   </div>
-                </form>
+                </div>
+                <div className="h-96 lg:h-[500px] overflow-y-auto">
+                  {onlineUsers.length === 0 ? (
+                    <p className="text-center text-gray-500 py-8 text-sm">No active users</p>
+                  ) : (
+                    onlineUsers.map((user) => (
+                      <UserListItem
+                        key={user.id}
+                        user={user}
+                        isCurrentUser={user.id === userIdRef.current}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Chat Area */}
+              <div className="flex-1 flex flex-col">
+                <div className="h-96 lg:h-[500px] overflow-y-auto p-3 space-y-3">
+                  {isLoading && (
+                    <p className="text-center text-gray-500 mt-8 text-sm">
+                      Loading messages...
+                    </p>
+                  )}
+                  {!isLoading && messages.length === 0 && (
+                    <p className="text-center text-gray-500 mt-8 text-sm">
+                      No messages yet. Start the conversation!
+                    </p>
+                  )}
+                  {messages.map((message) => (
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      currentUserId={userIdRef.current}
+                      isHovered={hoveredMessageId === message.id}
+                      onMouseEnter={() => handleMouseEnter(message.id)}
+                      onMouseLeave={handleMouseLeave}
+                      onReact={(type) => addReaction(message.id, type)}
+                    />
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input Area with top border */}
+                <div className="border-t p-3">
+                  <form onSubmit={sendMessage}>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={inputMessage}
+                        onChange={(e) => setInputMessage(e.target.value)}
+                        placeholder="Type a message..."
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        maxLength={500}
+                      />
+                      <button
+                        type="submit"
+                        className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm"
+                      >
+                        Send
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
             </div>
           </div>
