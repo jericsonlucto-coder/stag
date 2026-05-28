@@ -568,19 +568,19 @@ export default function Home() {
       const data: Record<string, FirebaseMessage> = await res.json();
       
       const olderMessages: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
-        .map(([key, msg]) => ({
-          id: key,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered" as MessageStatus,
-          reactions: sanitizeReactions(msg.reactions || []),
-          imageUrl: msg.imageUrl,
-          isImage: msg.isImage,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
+    .filter(([, msg]) => msg && (msg.text || msg.imageUrl))
+    .map(([key, msg]) => ({
+      id: key,
+      text: msg.text || "",
+      username: msg.username,
+      timestamp: msg.timestamp || Date.now(),
+      userId: msg.userId || "",
+      status: "delivered" as MessageStatus,
+      reactions: sanitizeReactions(msg.reactions || []),
+      imageUrl: msg.imageUrl,
+      isImage: msg.isImage || false,
+    }))
+    .sort((a, b) => a.timestamp - b.timestamp);
       
       if (olderMessages.length === 0 || olderMessages.length < MESSAGES_PER_PAGE) {
         setHasMoreMessages(false);
@@ -629,50 +629,40 @@ export default function Home() {
   }, [messages]);
 
   // ── Load Initial Messages ────────────────────────────────
-  const loadMessages = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const totalCount = await api.getMessagesCount();
-      setTotalMessages(totalCount);
-      
-      const res = await api.getMessages(MESSAGES_PER_PAGE);
-      const data: Record<string, FirebaseMessage> = await res.json();
-      
-      const loaded: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
-        .map(([key, msg]) => ({
-          id: key,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered" as MessageStatus,
-          reactions: sanitizeReactions(msg.reactions || []),
-          imageUrl: msg.imageUrl,
-          isImage: msg.isImage,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
-      
-      setMessages(loaded);
-      
-      if (loaded.length > 0) {
-        const oldestMessageId = loaded[0].id;
-        const olderCheck = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
-        const olderData = await olderCheck.json();
-        setHasMoreMessages(Object.keys(olderData || {}).length > 0);
-      } else {
-        setHasMoreMessages(false);
-      }
-      
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-      }, 100);
-    } catch (err) {
-      console.error("Error loading messages:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+const loadMessages = useCallback(async () => {
+  setIsLoading(true);
+  try {
+    const totalCount = await api.getMessagesCount();
+    setTotalMessages(totalCount);
+    
+    const res = await api.getMessages(MESSAGES_PER_PAGE);
+    const data: Record<string, FirebaseMessage> = await res.json();
+    
+    const loaded: Message[] = Object.entries(data || {})
+      .filter(([, msg]) => msg && (msg.text || msg.imageUrl)) // Allow messages with only images
+      .map(([key, msg]) => ({
+        id: key,
+        text: msg.text || "",
+        username: msg.username,
+        timestamp: msg.timestamp || Date.now(),
+        userId: msg.userId || "",
+        status: "delivered" as MessageStatus,
+        reactions: sanitizeReactions(msg.reactions || []),
+        imageUrl: msg.imageUrl,
+        isImage: msg.isImage || false,
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+    
+    console.log("Loaded messages with images:", loaded.filter(m => m.isImage).length);
+    setMessages(loaded);
+    
+    // ... rest of the function
+  } catch (err) {
+    console.error("Error loading messages:", err);
+  } finally {
+    setIsLoading(false);
+  }
+}, []);
 
   // ── User Presence ─────────────────────────────────────────
   const registerUser = useCallback(async () => {
