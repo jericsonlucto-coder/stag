@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface ImageMessageProps {
   imageUrl: string;
@@ -21,9 +21,32 @@ export default function ImageMessage({
 }: ImageMessageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  const [imageDataUrl, setImageDataUrl] = useState<string>('');
   
   const formatTime = (timestamp: number) => 
     new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  
+  useEffect(() => {
+    // Fetch image from Firebase
+    const fetchImage = async () => {
+      try {
+        const response = await fetch(imageUrl);
+        const data = await response.json();
+        if (data && data.data) {
+          setImageDataUrl(data.data);
+        } else {
+          setImageError(true);
+        }
+      } catch (error) {
+        console.error('Error loading image:', error);
+        setImageError(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchImage();
+  }, [imageUrl]);
   
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-2 sm:mb-3`}>
@@ -52,19 +75,16 @@ export default function ImageMessage({
               </div>
             )}
             
-            {!imageError ? (
+            {!imageError && imageDataUrl && (
               <img
-                src={imageUrl}
+                src={imageDataUrl}
                 alt="Shared image"
-                className={`rounded-lg max-w-full max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity ${isLoading ? 'hidden' : 'block'}`}
-                onClick={() => onImageClick?.(imageUrl)}
-                onLoad={() => setIsLoading(false)}
-                onError={() => {
-                  setIsLoading(false);
-                  setImageError(true);
-                }}
+                className={`rounded-lg max-w-full max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity`}
+                onClick={() => onImageClick?.(imageDataUrl)}
               />
-            ) : (
+            )}
+            
+            {imageError && !isLoading && (
               <div className="w-full h-48 bg-red-100 rounded-lg flex items-center justify-center">
                 <div className="text-center">
                   <svg className="w-8 h-8 text-red-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
