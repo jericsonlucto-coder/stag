@@ -138,21 +138,6 @@ const fetchImage = async (imageId: string): Promise<{ full: string; thumbnail: s
   }
 };
 
-const enrichMessagesWithImages = async (messages: Message[]): Promise<Message[]> => {
-  const enriched = await Promise.all(
-    messages.map(async (msg) => {
-      if (msg.type === "image" && msg.imageId && !msg.imageUrl) {
-        const imageData = await fetchImage(msg.imageId);
-        if (imageData) {
-          return { ...msg, imageUrl: imageData.full, imageThumbnail: imageData.thumbnail };
-        }
-      }
-      return msg;
-    })
-  );
-  return enriched;
-};
-
 // ============================================================
 // API HELPERS
 // ============================================================
@@ -167,13 +152,25 @@ const api = {
       return 0;
     }
   },
-  getMessages: (limit?: number) => {
-    let url = `${FIREBASE_DB_URL}/messages.json?orderBy="$key"`;
-    if (limit) url += `&limitToLast=${limit}`;
-    return fetch(url);
+  getAllMessages: async () => {
+    try {
+      const res = await fetch(`${FIREBASE_DB_URL}/messages.json`);
+      const data = await res.json();
+      return data || {};
+    } catch (err) {
+      console.error("Error getting all messages:", err);
+      return {};
+    }
   },
-  getMessagesBefore: (endBefore: string, limit: number) => {
-    return fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${endBefore}"&limitToLast=${limit}`);
+  getAllImages: async () => {
+    try {
+      const res = await fetch(`${FIREBASE_DB_URL}/images.json`);
+      const data = await res.json();
+      return data || {};
+    } catch (err) {
+      console.error("Error getting all images:", err);
+      return {};
+    }
   },
   getUsers: () => fetch(`${FIREBASE_DB_URL}/users.json`),
   putUser: (userId: string, data: object) =>
@@ -479,7 +476,6 @@ export default function Home() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
-  const [totalMessages, setTotalMessages] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -493,9 +489,132 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const userIdRef = useRef<string>(generateId());
   const usernameRef = useRef<string>("");
+  const allMessagesCache = useRef<Message[]>([]);
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+
+  // ── Load and Combine Messages Function ─────────────────────────────────
+  const loadAndCombineMessages = useCallback(async (limit?: number, beforeTimestamp?: number): Promise<Message[]> => {
+    try {
+      // Fetch all messages and images
+      const [messagesData, imagesData] = await Promise.all([
+        api.getAllMessages(),
+        api.getAllImages()
+      ]);
+      
+      // Convert messages to array
+      const allMessages: Message[] = [];
+      
+      Object.entries(messagesData).forEach(([id, msg]: [string, any]) => {
+        if (msg?.text && msg?.username) {
+          const message: Message = {
+            id: id,
+            text: msg.text,
+            username: msg.username,
+            timestamp: msg.timestamp || Date.now(),
+            userId: msg.userId || "",
+            status: "delivered" as MessageStatus,
+            reactions: sanitizeReactions(msg.reactions || []),
+            type: msg.type || "text",
+            imageId: msg.imageId,
+          };
+          
+          // Attach image data if it's an image message
+          if (message.type === "image" && message.imageId && imagesData[message.imageId]) {
+            const imageData = imagesData[message.imageId];
+            message.imageUrl = imageData.full;
+            message.imageThumbnail = imageData.thumbnail;
+          }
+          
+          allMessages.push(message);
+        }
+      });
+      
+      // Sort by timestamp (newest first for pagination)
+      allMessages.sort((a, b) => b.timestamp - a.timestamp);
+      
+      // Filter by beforeTimestamp if provided
+      let filteredMessages = allMessages;
+      if (beforeTimestamp) {
+        filteredMessages = allMessages.filter(m => m.timestamp < beforeTimestamp);
+      }
+      
+      // Apply limit
+      if (limit && limit > 0) {
+        filteredMessages = filteredMessages.slice(0, limit);
+      }
+      
+      // Return in chronological order (oldest first for display)
+      return filteredMessages.reverse();
+      
+    } catch (err) {
+      console.error("Error loading and combining messages:", err);
+      return [];
+    }
+  }, []);
+
+  // ── Load Initial Messages ───────────────────────────────────────────
+  const loadMessages = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const loadedMessages = await loadAndCombineMessages(MESSAGES_PER_PAGE);
+      allMessagesCache.current = loadedMessages;
+      setMessages(loadedMessages);
+      
+      // Check if there are more messages to load
+      const olderMessages = await loadAndCombineMessages(1, loadedMessages[0]?.timestamp);
+      setHasMoreMessages(olderMessages.length > 0);
+      
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 100);
+    } catch (err) {
+      console.error("Error loading messages:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadAndCombineMessages]);
+
+  // ── Load More Messages ──────────────────────────────────────────────
+  const loadMoreMessages = async () => {
+    if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
+    
+    setIsLoadingMore(true);
+    try {
+      const oldestMessage = messages[0];
+      if (!oldestMessage) return;
+      
+      const olderMessages = await loadAndCombineMessages(MESSAGES_PER_PAGE, oldestMessage.timestamp);
+      
+      if (olderMessages.length === 0) {
+        setHasMoreMessages(false);
+      } else {
+        const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
+        const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
+        
+        setMessages(prev => [...olderMessages, ...prev]);
+        allMessagesCache.current = [...olderMessages, ...messages];
+        
+        // Check if there are even more messages
+        const evenOlderMessages = await loadAndCombineMessages(1, olderMessages[0]?.timestamp);
+        setHasMoreMessages(evenOlderMessages.length > 0);
+        
+        setTimeout(() => {
+          if (messagesContainerRef.current) {
+            const newScrollHeight = messagesContainerRef.current.scrollHeight;
+            const heightDifference = newScrollHeight - scrollHeightBefore;
+            messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
+          }
+          setShowLoadMoreButton(false);
+        }, 100);
+      }
+    } catch (err) {
+      console.error("Error loading more messages:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   // ── User Presence Functions ─────────────────────────────────────────
   const updateLastActive = useCallback(async () => {
@@ -595,113 +714,6 @@ export default function Home() {
     updateUserActivity();
   };
 
-  // ── Load More Messages ──────────────────────────────────────────────
-  const loadMoreMessages = async () => {
-    if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
-    setIsLoadingMore(true);
-    try {
-      const oldestMessage = messages[0];
-      if (!oldestMessage) return;
-      const res = await api.getMessagesBefore(oldestMessage.id, MESSAGES_PER_PAGE);
-      const data: Record<string, any> = await res.json();
-      const olderMessages: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
-        .map(([key, msg]) => ({
-          id: key,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered" as MessageStatus,
-          reactions: sanitizeReactions(msg.reactions || []),
-          type: msg.type || "text",
-          imageId: msg.imageId,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
-      
-      const enrichedOlderMessages = await enrichMessagesWithImages(olderMessages);
-      
-      if (enrichedOlderMessages.length === 0 || enrichedOlderMessages.length < MESSAGES_PER_PAGE) {
-        setHasMoreMessages(false);
-      }
-      
-      if (enrichedOlderMessages.length > 0) {
-        const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
-        const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
-        setMessages(prev => [...enrichedOlderMessages, ...prev]);
-        setTimeout(() => {
-          if (messagesContainerRef.current) {
-            const newScrollHeight = messagesContainerRef.current.scrollHeight;
-            const heightDifference = newScrollHeight - scrollHeightBefore;
-            messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
-          }
-          setShowLoadMoreButton(false);
-        }, 100);
-      }
-    } catch (err) {
-      console.error("Error loading more messages:", err);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  };
-
-  const checkForOlderMessages = useCallback(async () => {
-    if (messages.length === 0) return;
-    try {
-      const oldestMessageId = messages[0].id;
-      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
-      const data = await res.json();
-      setHasMoreMessages(Object.keys(data || {}).length > 0);
-    } catch (err) {
-      console.error("Error checking for older messages:", err);
-    }
-  }, [messages]);
-
-  // ── Load Initial Messages ───────────────────────────────────────────
-  const loadMessages = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const totalCount = await api.getMessagesCount();
-      setTotalMessages(totalCount);
-      const res = await api.getMessages(MESSAGES_PER_PAGE);
-      const data: Record<string, any> = await res.json();
-      const loaded: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
-        .map(([key, msg]) => ({
-          id: key,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered" as MessageStatus,
-          reactions: sanitizeReactions(msg.reactions || []),
-          type: msg.type || "text",
-          imageId: msg.imageId,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
-      
-      const enrichedMessages = await enrichMessagesWithImages(loaded);
-      setMessages(enrichedMessages);
-      
-      if (loaded.length > 0) {
-        const oldestMessageId = loaded[0].id;
-        const olderCheck = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
-        const olderData = await olderCheck.json();
-        setHasMoreMessages(Object.keys(olderData || {}).length > 0);
-      } else {
-        setHasMoreMessages(false);
-      }
-      
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-      }, 100);
-    } catch (err) {
-      console.error("Error loading messages:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   // ── User Presence Registration ──────────────────────────────────────
   const registerUser = useCallback(async () => {
     try {
@@ -744,11 +756,6 @@ export default function Home() {
     const interval = setInterval(loadOnlineUsers, USER_REFRESH_INTERVAL);
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
-
-  useEffect(() => {
-    if (!isJoined || messages.length === 0) return;
-    checkForOlderMessages();
-  }, [isJoined, messages, checkForOlderMessages]);
 
   useEffect(() => {
     if (!isUserScrolled && messagesEndRef.current && messages.length > 0 && !isLoadingMore) {
@@ -935,44 +942,25 @@ export default function Home() {
     channel.bind("new-message", async (data: any) => {
       console.log("Received new message via Pusher:", data);
       
-      // Check if message already exists
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data.id)) return prev;
-        return prev;
-      });
-      
-      // Fetch image data if it's an image message
       let imageUrl = undefined;
       let imageThumbnail = undefined;
       
       if (data.type === "image" && data.imageId) {
-        console.log("Fetching image for ID:", data.imageId);
         const imageData = await fetchImage(data.imageId);
         if (imageData) {
           imageUrl = imageData.full;
           imageThumbnail = imageData.thumbnail;
-          console.log("Image fetched successfully");
-        } else {
-          console.log("Failed to fetch image");
         }
       }
       
-      // Add the message with image data
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
         
         const newMessage: Message = {
-          id: data.id,
-          text: data.text,
-          username: data.username,
-          timestamp: data.timestamp,
-          userId: data.userId,
-          type: data.type || "text",
-          imageId: data.imageId,
+          ...data,
           status: "delivered" as MessageStatus,
-          reactions: data.reactions || [],
-          imageUrl: imageUrl,
-          imageThumbnail: imageThumbnail,
+          imageUrl,
+          imageThumbnail,
         };
         
         const newMessages = [...prev, newMessage].sort(
