@@ -10,20 +10,6 @@ interface ImageMessage {
   userId: string;
 }
 
-interface ImgBBResponse {
-  data: {
-    url: string;
-    thumb: string;
-    medium: string;
-    delete_url: string;
-  };
-  success: boolean;
-  status: number;
-  error?: {
-    message: string;
-  };
-}
-
 // Same credentials as your other endpoints
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
@@ -32,32 +18,43 @@ const PUSHER_CLUSTER = "ap1";
 
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 
-// Upload to imgBB (free, no env needed)
-async function uploadToImgBB(base64Image: string): Promise<string> {
-  // Remove the data:image/xxx;base64, prefix if present
-  const base64Data = base64Image.includes('base64,') 
-    ? base64Image.split('base64,')[1] 
-    : base64Image;
+// Compress and optimize image
+function compressImage(base64Image: string, maxWidth: number = 800): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // This would need to be done client-side or with a library
+    // For server-side, we'll just store the original for now
+    resolve(base64Image);
+  });
+}
+
+// Store image in Firebase as a separate node
+async function storeImageInFirebase(base64Image: string, messageId: string): Promise<string> {
+  // Check image size and compress if needed
+  const imageSize = base64Image.length;
+  console.log(`Original image size: ${(imageSize / 1024).toFixed(2)} KB`);
   
-  const formData = new FormData();
-  formData.append('image', base64Data);
-  
-  // You need to replace this with your own API key from https://api.imgbb.com/
-  // For now, let's use a placeholder - you MUST get your own key
-  const IMGBB_API_KEY = "YOUR_IMGBB_API_KEY"; // Replace this with your actual key
-  
-  const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-    method: 'POST',
-    body: formData,
+  // For large images, we'll store them in a separate "images" node
+  const imageResponse = await fetch(`${FIREBASE_DB_URL}/images/${messageId}.json`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      data: base64Image,
+      size: imageSize,
+      timestamp: Date.now(),
+    }),
   });
   
-  const data: ImgBBResponse = await response.json();
-  
-  if (!data.success) {
-    throw new Error('Image upload failed: ' + (data.error?.message || 'Unknown error'));
+  if (!imageResponse.ok) {
+    throw new Error('Failed to store image');
   }
   
-  return data.data.url;
+  // Return the URL to fetch the image
+  return `${FIREBASE_DB_URL}/images/${messageId}.json`;
+}
+
+// Function to get image URL for displaying
+function getImageDisplayUrl(messageId: string): string {
+  return `${FIREBASE_DB_URL}/images/${messageId}.json`;
 }
 
 async function getSignature(secret: string, message: string): Promise<string> {
@@ -97,19 +94,19 @@ export async function POST(request: Request) {
     
     const messageId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
     
-    // Upload image to imgBB
+    // Store image in Firebase
     let imageUrl;
     try {
-      imageUrl = await uploadToImgBB(imageBase64);
-      console.log("Image uploaded successfully:", imageUrl);
+      imageUrl = await storeImageInFirebase(imageBase64, messageId);
+      console.log("Image stored in Firebase successfully");
     } catch (error) {
-      console.error("Image upload failed:", error);
-      return NextResponse.json({ error: "Failed to upload image" }, { status: 500 });
+      console.error("Image storage failed:", error);
+      return NextResponse.json({ error: "Failed to store image" }, { status: 500 });
     }
     
     const imageMessage: ImageMessage = {
       id: messageId,
-      imageUrl,
+      imageUrl: getImageDisplayUrl(messageId),
       imageStoragePath: `images/${messageId}`,
       text: text || "",
       username,
@@ -117,13 +114,14 @@ export async function POST(request: Request) {
       userId,
     };
     
-    // Save to Firebase Database
+    // Save message metadata to Firebase
     const firebaseResponse = await fetch(`${FIREBASE_DB_URL}/messages.json`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "image",
         imageUrl: imageMessage.imageUrl,
+        imageStoragePath: imageMessage.imageStoragePath,
         text: imageMessage.text,
         username: imageMessage.username,
         timestamp: imageMessage.timestamp,
@@ -139,13 +137,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to save to Firebase" }, { status: 500 });
     }
     
-    console.log("Saved to Firebase with ID:", firebaseResult.name);
-    
     // Trigger Pusher event
     const payload = {
       name: "new-image",
       channel: "private-chat-channel",
-      data: JSON.stringify({ ...imageMessage, id: messageId })
+      data: JSON.stringify({ 
+        ...imageMessage, 
+        id: messageId
+      })
     };
     
     const timestamp_pusher = Math.floor(Date.now() / 1000);
@@ -164,7 +163,6 @@ export async function POST(request: Request) {
     if (!pusherResponse.ok) {
       const errorText = await pusherResponse.text();
       console.error("Pusher API error:", errorText);
-      // Still return success since Firebase saved
       return NextResponse.json({ 
         success: true, 
         message: imageMessage,
@@ -172,9 +170,6 @@ export async function POST(request: Request) {
         warning: "Saved but Pusher notification failed"
       });
     }
-    
-    const pusherResult = await pusherResponse.json();
-    console.log("Pusher send result:", pusherResult);
     
     return NextResponse.json({ 
       success: true, 
