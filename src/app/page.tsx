@@ -1,7 +1,11 @@
 "use client";
+
 import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
+import ImageMessage from "@/components/ImageMessage";
+import ImageUploadModal from "@/components/ImageUploadModal";
+import ImageViewer from "@/components/ImageViewer";
 
 // ============================================================
 // TYPES & INTERFACES
@@ -18,7 +22,9 @@ interface Reaction {
 
 interface Message {
   id: string;
-  text: string;
+  text?: string;
+  imageUrl?: string;
+  type?: "text" | "image";
   username: string;
   timestamp: number;
   userId: string;
@@ -34,7 +40,9 @@ interface User {
 }
 
 interface FirebaseMessage {
-  text: string;
+  text?: string;
+  imageUrl?: string;
+  type?: "text" | "image";
   username: string;
   timestamp: number;
   userId: string;
@@ -143,10 +151,23 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId, reaction }),
     }),
+  uploadImage: async (file: File, caption: string, username: string, userId: string, messageId: string) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    formData.append("username", username);
+    formData.append("userId", userId);
+    formData.append("text", caption);
+    formData.append("messageId", messageId);
+    
+    return fetch("/api/upload-image", {
+      method: "POST",
+      body: formData,
+    });
+  },
 };
 
 // ============================================================
-// SUB-COMPONENTS
+// SUB-COMPONENTS (Internal)
 // ============================================================
 function StatusIcon({ status }: { status: MessageStatus }) {
   const configs = {
@@ -405,6 +426,10 @@ export default function Home() {
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
@@ -412,7 +437,7 @@ export default function Home() {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
-  // ── User Presence Functions (Declared first) ─────────────────────────
+  // ── User Presence Functions ─────────────────────────
   const updateLastActive = useCallback(async () => {
     if (!isJoined) return;
     try {
@@ -536,10 +561,12 @@ export default function Home() {
       const data: Record<string, FirebaseMessage> = await res.json();
       
       const olderMessages: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
+        .filter(([, msg]) => (msg?.text || msg?.imageUrl) && msg?.username)
         .map(([key, msg]) => ({
           id: key,
           text: msg.text,
+          imageUrl: msg.imageUrl,
+          type: msg.type || (msg.imageUrl ? "image" : "text"),
           username: msg.username,
           timestamp: msg.timestamp || Date.now(),
           userId: msg.userId || "",
@@ -605,10 +632,12 @@ export default function Home() {
       const data: Record<string, FirebaseMessage> = await res.json();
       
       const loaded: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
+        .filter(([, msg]) => (msg?.text || msg?.imageUrl) && msg?.username)
         .map(([key, msg]) => ({
           id: key,
           text: msg.text,
+          imageUrl: msg.imageUrl,
+          type: msg.type || (msg.imageUrl ? "image" : "text"),
           username: msg.username,
           timestamp: msg.timestamp || Date.now(),
           userId: msg.userId || "",
@@ -824,6 +853,7 @@ export default function Home() {
       userId: userIdRef.current,
       status: "sending",
       reactions: [],
+      type: "text",
     };
     setInputMessage("");
     const updateStatus = (status: MessageStatus | undefined) =>
@@ -853,6 +883,69 @@ export default function Home() {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
+  };
+
+  const handleImageUpload = async (file: File, caption: string) => {
+    setIsUploadingImage(true);
+    const messageId = generateId();
+    
+    // Create temporary preview URL
+    const tempImageUrl = URL.createObjectURL(file);
+    
+    const imageMessage: Message = {
+      id: messageId,
+      imageUrl: tempImageUrl,
+      type: "image",
+      text: caption || undefined,
+      username,
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+    };
+    
+    setMessages((prev) => [...prev, imageMessage].sort((a, b) => a.timestamp - b.timestamp));
+    
+    try {
+      const response = await api.uploadImage(file, caption, username, userIdRef.current, messageId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        // Update the message with the permanent URL
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId
+              ? { ...msg, imageUrl: data.imageUrl, status: "delivered" }
+              : msg
+          )
+        );
+        
+        // Also trigger Pusher event for real-time
+        await api.sendMessage({
+          ...imageMessage,
+          id: messageId,
+          imageUrl: data.imageUrl,
+          status: "delivered",
+        });
+      } else {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId ? { ...msg, status: "error" } : msg
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Error uploading image:", err);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, status: "error" } : msg
+        )
+      );
+    } finally {
+      setIsUploadingImage(false);
+      // Clean up temporary URL
+      URL.revokeObjectURL(tempImageUrl);
+    }
   };
 
   const joinChat = (e: React.FormEvent) => {
@@ -938,7 +1031,7 @@ export default function Home() {
           <div className="flex items-center gap-2 sm:gap-3">
             <Image src="/next.svg" alt="Logo" width={40} height={10} className="sm:w-[60px]" />
             <h1 className="text-sm sm:text-lg font-semibold text-gray-800">
-              Chat
+              Chat with Images
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
@@ -1108,23 +1201,44 @@ export default function Home() {
                   )}
                   {messages.map((message) => (
                     <div key={message.id} id={`msg-${message.id}`}>
-                      <MessageBubble
-                        message={message}
-                        currentUserId={userIdRef.current}
-                        isHovered={hoveredMessageId === message.id}
-                        onMouseEnter={() => handleMouseEnter(message.id)}
-                        onMouseLeave={handleMouseLeave}
-                        onReact={(type) => addReaction(message.id, type)}
-                      />
+                      {message.type === "image" || message.imageUrl ? (
+                        <ImageMessage
+                          imageUrl={message.imageUrl!}
+                          username={message.username}
+                          timestamp={message.timestamp}
+                          text={message.text}
+                          isOwn={message.userId === userIdRef.current}
+                          onImageClick={(url) => setSelectedImage(url)}
+                        />
+                      ) : (
+                        <MessageBubble
+                          message={message}
+                          currentUserId={userIdRef.current}
+                          isHovered={hoveredMessageId === message.id}
+                          onMouseEnter={() => handleMouseEnter(message.id)}
+                          onMouseLeave={handleMouseLeave}
+                          onReact={(type) => addReaction(message.id, type)}
+                        />
+                      )}
                     </div>
                   ))}
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input Area */}
+                {/* Input Area with Image Button */}
                 <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
                   <form onSubmit={sendMessage}>
                     <div className="flex gap-1 sm:gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsImageModalOpen(true)}
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors"
+                        title="Upload image"
+                      >
+                        <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </button>
                       <input
                         type="text"
                         value={inputMessage}
@@ -1149,6 +1263,21 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <ImageUploadModal
+        isOpen={isImageModalOpen}
+        onClose={() => setIsImageModalOpen(false)}
+        onUpload={handleImageUpload}
+        isUploading={isUploadingImage}
+      />
+
+      {selectedImage && (
+        <ImageViewer
+          imageUrl={selectedImage}
+          onClose={() => setSelectedImage(null)}
+        />
+      )}
     </div>
   );
 }
