@@ -44,9 +44,9 @@ interface User {
 // ============================================================
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 const REACTIONS: ReactionType[] = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
-const HEARTBEAT_INTERVAL = 15000;
-const USER_ACTIVE_THRESHOLD = 60000;
-const USER_REFRESH_INTERVAL = 3000; // Refresh every 3 seconds
+const HEARTBEAT_INTERVAL = 10000; // 10 seconds heartbeat
+const USER_ACTIVE_THRESHOLD = 30000; // 30 seconds - user is considered inactive after 30 seconds
+const USER_REFRESH_INTERVAL = 2000; // Refresh every 2 seconds
 const STATUS_CLEAR_DELAY = 2000;
 const MESSAGES_PER_PAGE = 50;
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
@@ -820,7 +820,7 @@ function UserListItem({
         >
           {user.username?.charAt(0).toUpperCase()}
         </div>
-        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse" />
+        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
@@ -867,12 +867,21 @@ export default function Home() {
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const lastActivityUpdateRef = useRef<number>(Date.now());
 
   // ── Activity Tracking Function ───────────────────────────────────────
   const updateUserActivityAndActive = useCallback(async () => {
     if (!isJoined) return;
+    
+    const now = Date.now();
+    // Only update if more than 5 seconds have passed since last update
+    if (now - lastActivityUpdateRef.current < 5000) {
+      return;
+    }
+    
+    lastActivityUpdateRef.current = now;
+    
     try {
-      const now = Date.now();
       await api.patchUser(userIdRef.current, { lastActive: now });
       console.log("User activity updated at:", new Date(now).toLocaleTimeString());
       
@@ -1008,9 +1017,14 @@ export default function Home() {
       const data: Record<string, any> = await res.json();
       const now = Date.now();
       const active: User[] = [];
+      
       Object.entries(data || {}).forEach(([key, user]) => {
         if (!user?.username || !user?.lastActive) return;
-        if (now - user.lastActive < USER_ACTIVE_THRESHOLD) {
+        
+        // Check if user is active (last activity within threshold)
+        const isUserActive = (now - user.lastActive) < USER_ACTIVE_THRESHOLD;
+        
+        if (isUserActive) {
           active.push({
             id: key,
             username: user.username,
@@ -1019,13 +1033,15 @@ export default function Home() {
           });
         }
       });
+      
       active.sort((a, b) => {
         if (a.id === userIdRef.current) return -1;
         if (b.id === userIdRef.current) return 1;
         return a.username.localeCompare(b.username);
       });
+      
       setOnlineUsers(active);
-      console.log("Online users updated:", active.length);
+      console.log(`Online users: ${active.length} active out of ${Object.keys(data).length} total`);
     } catch (err) {
       console.error("Error loading online users:", err);
     }
@@ -1057,7 +1073,7 @@ export default function Home() {
     // Initial activity update
     handleUserInteraction();
     
-    // Set up heartbeat to keep user active
+    // Set up heartbeat to keep user active while on page
     userHeartbeatRef.current = setInterval(() => {
       updateUserActivityAndActive();
     }, HEARTBEAT_INTERVAL);
