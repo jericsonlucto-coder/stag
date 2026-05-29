@@ -108,7 +108,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 // Compress image before sending
 const compressImage = (base64: string, maxWidth = 800): Promise<string> => {
   return new Promise((resolve, reject) => {
-    const img = new Image();
+    const img = document.createElement('img'); // Use createElement instead
     img.onload = () => {
       const canvas = document.createElement("canvas");
       let width = img.width;
