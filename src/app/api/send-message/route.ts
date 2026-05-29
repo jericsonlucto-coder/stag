@@ -6,6 +6,9 @@ interface Message {
   username: string;
   timestamp: number;
   userId: string;
+  type?: "text" | "image";
+  imageUrl?: string;
+  imageThumbnail?: string;
 }
 
 interface FirebaseResponse {
@@ -50,7 +53,30 @@ async function getMD5(str: string): Promise<string> {
 export async function POST(request: Request) {
   try {
     const message: Message = await request.json();
-    console.log("Received message to save:", message);
+    console.log("Received message to save:", {
+      id: message.id,
+      type: message.type,
+      textLength: message.text?.length,
+      hasImageUrl: !!message.imageUrl,
+      hasThumbnail: !!message.imageThumbnail,
+      username: message.username
+    });
+    
+    // Prepare Firebase data - always save full message data
+    const firebaseData: any = {
+      text: message.text,
+      username: message.username,
+      timestamp: message.timestamp,
+      userId: message.userId,
+      createdAt: new Date().toISOString(),
+      type: message.type || "text"
+    };
+    
+    // Add image fields if present
+    if (message.type === "image") {
+      firebaseData.imageUrl = message.imageUrl;
+      firebaseData.imageThumbnail = message.imageThumbnail;
+    }
     
     // Save to Firebase Realtime Database
     const firebaseResponse = await fetch(`${FIREBASE_DB_URL}/messages.json`, {
@@ -58,13 +84,7 @@ export async function POST(request: Request) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        text: message.text,
-        username: message.username,
-        timestamp: message.timestamp,
-        userId: message.userId,
-        createdAt: new Date().toISOString()
-      }),
+      body: JSON.stringify(firebaseData),
     });
     
     const firebaseResult: FirebaseResponse = await firebaseResponse.json();
@@ -78,15 +98,24 @@ export async function POST(request: Request) {
       );
     }
     
-    // Create the payload for Pusher HTTP API
-    const payload = {
+    // Create the payload for Pusher HTTP API - send the full message object
+    const pusherPayload = {
       name: "new-message",
       channel: "private-chat-channel",
-      data: JSON.stringify(message)
+      data: JSON.stringify({
+        id: message.id,
+        text: message.text,
+        username: message.username,
+        timestamp: message.timestamp,
+        userId: message.userId,
+        type: message.type || "text",
+        imageUrl: message.imageUrl,
+        imageThumbnail: message.imageThumbnail,
+      })
     };
     
     const timestamp = Math.floor(Date.now() / 1000);
-    const bodyString = JSON.stringify(payload);
+    const bodyString = JSON.stringify(pusherPayload);
     const path = `/apps/${PUSHER_APP_ID}/events`;
     const queryString = `auth_key=${PUSHER_KEY}&auth_timestamp=${timestamp}&auth_version=1.0&body_md5=${await getMD5(bodyString)}`;
     const stringToSign = `POST\n${path}\n${queryString}`;
@@ -107,7 +136,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ 
         success: true, 
         warning: "Saved to Firebase but Pusher notification failed",
-        firebaseId: firebaseResult.name 
+        firebaseId: firebaseResult.name,
+        message: message
       });
     }
     
@@ -117,7 +147,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
       success: true, 
       pusher: pusherResult,
-      firebaseId: firebaseResult.name 
+      firebaseId: firebaseResult.name,
+      message: message
     });
     
   } catch (error) {
