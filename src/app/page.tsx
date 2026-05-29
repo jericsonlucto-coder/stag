@@ -1012,12 +1012,26 @@ export default function Home() {
       });
     }, []);
 
-  const sendImageMessage = useCallback(async () => {
+const sendImageMessage = useCallback(async () => {
+  if (!pendingImage || isSendingImage) return;
+  setIsSendingImage(true);
+  updateUserActivity();
+  await updateLastActive();
 
-  // Optimistic message with local blob preview (still valid since not revoked)
+  // ✅ Capture ALL values from pendingImage FIRST before touching state
+  const messageId = generateId();
+  const fileToUpload = pendingImage.file;
+  const captionToSend = pendingImage.caption;
+  const previewUrl = pendingImage.preview;
+  const timestampToSend = Date.now();
+
+  // ✅ Clear pending state WITHOUT revoking blob URL yet
+  setPendingImage(null);
+
+  // ✅ Now safe to build optimistic message — all vars are captured above
   const optimisticMessage: Message = {
     id: messageId,
-    imageUrl: pendingImage.preview,
+    imageUrl: previewUrl,
     type: "image",
     text: captionToSend || undefined,
     username,
@@ -1063,7 +1077,7 @@ export default function Home() {
       );
 
       // ✅ Now safe to revoke the blob URL
-      URL.revokeObjectURL(optimisticMessage.imageUrl!);
+      URL.revokeObjectURL(previewUrl);
 
       // Broadcast to other users with real CDN URL
       await api.sendMessage({
@@ -1078,7 +1092,6 @@ export default function Home() {
         reactions: [],
       });
     } else {
-      // ✅ On error, keep blob URL visible so user sees their image with error status
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === messageId ? { ...msg, status: "error" } : msg
