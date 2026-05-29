@@ -495,6 +495,7 @@ export default function Home() {
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const usernameRef = useRef<string>("");
 
   // ── User Presence Functions ─────────────────────────────────────────
   const updateLastActive = useCallback(async () => {
@@ -564,16 +565,16 @@ export default function Home() {
     };
   }, [isJoined, updateUserActivity]);
 
-  useEffect(() => {
-    const savedUsername = localStorage.getItem("chat-username");
-    const savedUserId = localStorage.getItem("chat-userId");
-    if (savedUsername && savedUserId) {
-      setUsername(savedUsername);
-      userIdRef.current = savedUserId;
-      setIsJoined(true);
-    }
-  }, []);
-
+    useEffect(() => {
+      const savedUsername = localStorage.getItem("chat-username");
+      const savedUserId = localStorage.getItem("chat-userId");
+      if (savedUsername && savedUserId) {
+        setUsername(savedUsername);
+        usernameRef.current = savedUsername; // Set the ref
+        userIdRef.current = savedUserId;
+        setIsJoined(true);
+      }
+    }, []);
   // ── Scroll Detection ─────────────────────────────────────────────────
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
@@ -642,6 +643,11 @@ export default function Home() {
       setIsLoadingMore(false);
     }
   };
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const newUsername = e.target.value;
+  setUsername(newUsername);
+  usernameRef.current = newUsername;
+};
 
   const checkForOlderMessages = useCallback(async () => {
     if (messages.length === 0) return;
@@ -756,112 +762,171 @@ export default function Home() {
 
   // ── Image Upload Function ───────────────────────────────────────────
   const handleImageUpload = async (file: File) => {
-    if (!file) return;
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      alert("Please upload a valid image (JPEG, PNG, GIF, or WEBP)");
-      return;
-    }
-    if (file.size > MAX_IMAGE_SIZE) {
-      alert("Image must be less than 2MB");
-      return;
+  if (!file) return;
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    alert("Please upload a valid image (JPEG, PNG, GIF, or WEBP)");
+    return;
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    alert("Image must be less than 2MB");
+    return;
+  }
+  
+  setIsUploading(true);
+  updateUserActivity();
+  await updateLastActive();
+  const messageId = generateId();
+  
+  // Use usernameRef.current instead of username state
+  const currentUsername = usernameRef.current;
+  if (!currentUsername) {
+    alert("Username not found");
+    setIsUploading(false);
+    return;
+  }
+  
+  try {
+    const { full, thumbnail } = await processImage(file);
+    const uploadRes = await fetch("/api/upload-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        imageData: { full, thumbnail },
+        messageId: messageId,
+      }),
+    });
+    
+    if (!uploadRes.ok) {
+      throw new Error("Failed to upload image");
     }
     
-    setIsUploading(true);
-    updateUserActivity();
-    await updateLastActive();
-    const messageId = generateId();
+    const newMessage: Message = {
+      id: messageId,
+      text: "📷 Image",
+      username: currentUsername, // Use ref instead of state
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+      type: "image",
+      imageId: messageId,
+      imageUrl: full,
+      imageThumbnail: thumbnail,
+    };
+    
+    const updateStatus = (status: MessageStatus | undefined) =>
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+      );
+    
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === messageId)) return prev;
+      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+    });
+    
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
     
     try {
-      const { full, thumbnail } = await processImage(file);
-      const uploadRes = await fetch("/api/upload-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageData: { full, thumbnail },
-          messageId: messageId,
-        }),
-      });
-      
-      if (!uploadRes.ok) {
-        throw new Error("Failed to upload image");
-      }
-      
-      const newMessage: Message = {
-        id: messageId,
-        text: "📷 Image",
-        username,
-        timestamp: Date.now(),
-        userId: userIdRef.current,
-        status: "sending",
-        reactions: [],
-        type: "image",
-        imageId: messageId,
-        imageUrl: full,
-        imageThumbnail: thumbnail,
-      };
-      
-      const updateStatus = (status: MessageStatus | undefined) =>
-        setMessages((prev) =>
-          prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
-        );
-      
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === messageId)) return prev;
-        return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-      });
-      
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
-      
-      try {
-        updateStatus("sent");
-        const messageToSend = { ...newMessage };
-        delete (messageToSend as any).imageUrl;
-        delete (messageToSend as any).imageThumbnail;
-        const res = await api.sendMessage(messageToSend);
-        if (res.ok) {
-          updateStatus("delivered");
-          setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
-        } else {
-          updateStatus("error");
-          console.error("Failed to send image message:", await res.text());
-        }
-      } catch (err) {
-        console.error("Error sending image message:", err);
+      updateStatus("sent");
+      const messageToSend = { ...newMessage };
+      delete (messageToSend as any).imageUrl;
+      delete (messageToSend as any).imageThumbnail;
+      const res = await api.sendMessage(messageToSend);
+      if (res.ok) {
+        updateStatus("delivered");
+        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+      } else {
         updateStatus("error");
+        console.error("Failed to send image message:", await res.text());
       }
-      
-      setIsUserScrolled(false);
-      setShowScrollButton(false);
     } catch (err) {
-      console.error("Error processing image:", err);
-      alert("Failed to process image. Please try again.");
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      console.error("Error sending image message:", err);
+      updateStatus("error");
     }
-  };
-
-  // ── Handle Paste Event ──────────────────────────────────────────────
-  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
     
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      
-      if (item.type.indexOf("image") !== -1) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) {
-          await handleImageUpload(file);
-        }
-        break;
-      }
+    setIsUserScrolled(false);
+    setShowScrollButton(false);
+  } catch (err) {
+    console.error("Error processing image:", err);
+    alert("Failed to process image. Please try again.");
+  } finally {
+    setIsUploading(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
-  }, []);
+  }
+};
+
+// Update sendMessage to use usernameRef
+const sendMessage = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!inputMessage.trim()) return;
+  
+  const currentUsername = usernameRef.current;
+  if (!currentUsername) return;
+  
+  updateUserActivity();
+  await updateLastActive();
+  const messageId = generateId();
+  const newMessage: Message = {
+    id: messageId,
+    text: inputMessage,
+    username: currentUsername, // Use ref instead of state
+    timestamp: Date.now(),
+    userId: userIdRef.current,
+    status: "sending",
+    reactions: [],
+    type: "text",
+  };
+  setInputMessage("");
+  const updateStatus = (status: MessageStatus | undefined) =>
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+    );
+  setMessages((prev) => {
+    if (prev.some((m) => m.id === messageId)) return prev;
+    return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+  });
+  try {
+    updateStatus("sent");
+    const res = await api.sendMessage(newMessage);
+    if (res.ok) {
+      updateStatus("delivered");
+      setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+    } else {
+      updateStatus("error");
+    }
+  } catch (err) {
+    console.error("Error sending message:", err);
+    updateStatus("error");
+  }
+  setIsUserScrolled(false);
+  setShowScrollButton(false);
+  setTimeout(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, 100);
+};
+
+// Update the handlePaste function
+const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+  const items = e.clipboardData.items;
+  
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    
+    if (item.type.indexOf("image") !== -1) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) {
+        // Add a small delay to ensure everything is ready
+        await handleImageUpload(file);
+      }
+      break;
+    }
+  }
+}, []);
 
   // ── Send Text Message ───────────────────────────────────────────────
   const sendMessage = async (e: React.FormEvent) => {
@@ -1036,6 +1101,7 @@ export default function Home() {
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
+    usernameRef.current = username;
     localStorage.setItem("chat-username", username);
     localStorage.setItem("chat-userId", userIdRef.current);
     setIsJoined(true);
@@ -1082,16 +1148,16 @@ export default function Home() {
           <form onSubmit={joinChat} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                placeholder="Enter your username"
-                required
-                maxLength={20}
-                autoFocus
-              />
+         <input
+              type="text"
+              value={username}
+              onChange={handleUsernameChange}
+              className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+              placeholder="Enter your username"
+              required
+              maxLength={20}
+              autoFocus
+            />
             </div>
             <button type="submit" className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm sm:text-base">
               Join Chat
