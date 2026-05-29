@@ -44,7 +44,7 @@ interface User {
 // ============================================================
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 const REACTIONS: ReactionType[] = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
-const HEARTBEAT_INTERVAL = 30000;
+const HEARTBEAT_INTERVAL = 15000; // Reduced to 15 seconds for more frequent updates
 const USER_ACTIVE_THRESHOLD = 60000;
 const USER_REFRESH_INTERVAL = 5000;
 const STATUS_CLEAR_DELAY = 2000;
@@ -240,7 +240,7 @@ function JoinScreen({
 }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4 transition-colors duration-300">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 sm:p-10 max-w-md w-full transition-colors duration-300">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 sm:p-10 max-w-md w-full transition-colors duration-300 relative">
         {/* Theme Toggle Button */}
         <button
           onClick={toggleTheme}
@@ -351,7 +351,7 @@ function ChatScreen({
             </div>
             <div>
               <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white">Chatto</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">Real-time messaging</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">Gawa ni Jirik</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -580,10 +580,6 @@ function ChatScreen({
                   >
                     Send
                   </button>
-                </div>
-                <div className="text-xs text-gray-400 dark:text-gray-500 px-1 flex items-center gap-1">
-                  <span>📷</span>
-                  <span>Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB)</span>
                 </div>
               </form>
             </div>
@@ -884,6 +880,18 @@ export default function Home() {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
+  // ── Activity Tracking Function ───────────────────────────────────────
+  const updateUserActivityAndActive = async () => {
+    if (!isJoined) return;
+    try {
+      // Update last active timestamp
+      await api.patchUser(userIdRef.current, { lastActive: Date.now() });
+      console.log("User activity updated");
+    } catch (err) {
+      console.error("Error updating user activity:", err);
+    }
+  };
+
   // ── Load and Combine Messages Function ─────────────────────────────────
   const loadAndCombineMessages = async (limit?: number, beforeTimestamp?: number): Promise<Message[]> => {
     try {
@@ -1028,7 +1036,8 @@ export default function Home() {
             lastActive: user.lastActive,
           });
         } else {
-          api.deleteUser(key).catch(console.error);
+          // Don't delete inactive users, just don't show them
+          console.log(`User ${user.username} is inactive`);
         }
       });
       active.sort((a, b) => {
@@ -1042,30 +1051,46 @@ export default function Home() {
     }
   };
 
-  const updateUserActivity = () => {
-    if (!isJoined) return;
-    if (activityTimeoutRef.current) {
-      clearTimeout(activityTimeoutRef.current);
-    }
-    updateLastActive();
-    activityTimeoutRef.current = setTimeout(() => {}, 120000);
-  };
-
   // ── Effects for activity tracking ───────────────────────────────────
   useEffect(() => {
     if (!isJoined) return;
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
-    const handleUserActivity = () => updateUserActivity();
+    
+    // Update activity on any user interaction
+    const handleUserInteraction = () => {
+      updateUserActivityAndActive();
+    };
+    
+    // Track various user interactions
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click', 'focus'];
     events.forEach(event => {
-      window.addEventListener(event, handleUserActivity);
+      window.addEventListener(event, handleUserInteraction);
     });
-    updateUserActivity();
+    
+    // Focus events for input
+    const inputElement = inputRef.current;
+    if (inputElement) {
+      inputElement.addEventListener('focus', handleUserInteraction);
+      inputElement.addEventListener('click', handleUserInteraction);
+    }
+    
+    // Initial activity update
+    handleUserInteraction();
+    
+    // Set up heartbeat to keep user active
+    userHeartbeatRef.current = setInterval(() => {
+      updateUserActivityAndActive();
+    }, HEARTBEAT_INTERVAL);
+    
     return () => {
       events.forEach(event => {
-        window.removeEventListener(event, handleUserActivity);
+        window.removeEventListener(event, handleUserInteraction);
       });
-      if (activityTimeoutRef.current) {
-        clearTimeout(activityTimeoutRef.current);
+      if (inputElement) {
+        inputElement.removeEventListener('focus', handleUserInteraction);
+        inputElement.removeEventListener('click', handleUserInteraction);
+      }
+      if (userHeartbeatRef.current) {
+        clearInterval(userHeartbeatRef.current);
       }
     };
   }, [isJoined]);
@@ -1097,7 +1122,7 @@ export default function Home() {
     } else if (!isNearTop) {
       setShowLoadMoreButton(false);
     }
-    updateUserActivity();
+    updateUserActivityAndActive();
   };
 
   // ── User Presence Registration ──────────────────────────────────────
@@ -1127,20 +1152,16 @@ export default function Home() {
     if (!isJoined) return;
     registerUser();
     loadMessages();
-    userHeartbeatRef.current = setInterval(() => {
-      updateLastActive();
+    
+    // Refresh online users periodically
+    const interval = setInterval(() => {
       loadOnlineUsers();
-    }, HEARTBEAT_INTERVAL);
+    }, USER_REFRESH_INTERVAL);
+    
     return () => {
-      clearInterval(userHeartbeatRef.current);
+      clearInterval(interval);
       removeUser();
     };
-  }, [isJoined]);
-
-  useEffect(() => {
-    if (!isJoined) return;
-    const interval = setInterval(loadOnlineUsers, USER_REFRESH_INTERVAL);
-    return () => clearInterval(interval);
   }, [isJoined]);
 
   useEffect(() => {
@@ -1162,8 +1183,7 @@ export default function Home() {
     }
     
     setIsUploading(true);
-    updateUserActivity();
-    await updateLastActive();
+    await updateUserActivityAndActive();
     const messageId = generateId();
     
     const currentUsername = usernameRef.current;
@@ -1281,8 +1301,7 @@ export default function Home() {
     const currentUsername = usernameRef.current;
     if (!currentUsername) return;
     
-    updateUserActivity();
-    await updateLastActive();
+    await updateUserActivityAndActive();
     const messageId = generateId();
     const newMessage: Message = {
       id: messageId,
@@ -1399,7 +1418,7 @@ export default function Home() {
 
   // ── Reactions ───────────────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
-    updateUserActivity();
+    await updateUserActivityAndActive();
     const message = messages.find((m) => m.id === messageId);
     const cleanReactions = sanitizeReactions(message?.reactions || []);
     const hasReacted = cleanReactions.some(
@@ -1425,7 +1444,7 @@ export default function Home() {
     setIsUserScrolled(false);
     setShowScrollButton(false);
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    updateUserActivity();
+    updateUserActivityAndActive();
   };
 
   const joinChat = (e: React.FormEvent) => {
@@ -1500,7 +1519,7 @@ export default function Home() {
       onFileSelect={handleFileSelect}
       onPaste={handlePaste}
       onScroll={handleScroll}
-      updateUserActivity={updateUserActivity}
+      updateUserActivity={updateUserActivityAndActive}
       theme={theme}
       toggleTheme={toggleTheme}
     />
