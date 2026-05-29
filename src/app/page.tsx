@@ -142,16 +142,6 @@ const fetchImage = async (imageId: string): Promise<{ full: string; thumbnail: s
 // API HELPERS
 // ============================================================
 const api = {
-  getMessagesCount: async () => {
-    try {
-      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?shallow=true`);
-      const data = await res.json();
-      return Object.keys(data || {}).length;
-    } catch (err) {
-      console.error("Error getting message count:", err);
-      return 0;
-    }
-  },
   getAllMessages: async (): Promise<Record<string, any>> => {
     try {
       const res = await fetch(`${FIREBASE_DB_URL}/messages.json`);
@@ -207,70 +197,8 @@ const api = {
     }),
 };
 
-// Then update the loadAndCombineMessages function:
-
-const loadAndCombineMessages = useCallback(async (limit?: number, beforeTimestamp?: number): Promise<Message[]> => {
-  try {
-    // Fetch all messages and images
-    const [messagesData, imagesData] = await Promise.all([
-      api.getAllMessages(),
-      api.getAllImages()
-    ]);
-    
-    // Convert messages to array
-    const allMessages: Message[] = [];
-    
-    Object.entries(messagesData).forEach(([id, msg]: [string, any]) => {
-      if (msg?.text && msg?.username) {
-        const message: Message = {
-          id: id,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered" as MessageStatus,
-          reactions: sanitizeReactions(msg.reactions || []),
-          type: msg.type || "text",
-          imageId: msg.imageId,
-        };
-        
-        // Attach image data if it's an image message
-        if (message.type === "image" && message.imageId && imagesData && imagesData[message.imageId]) {
-          const imageData = imagesData[message.imageId];
-          if (imageData && imageData.full && imageData.thumbnail) {
-            message.imageUrl = imageData.full;
-            message.imageThumbnail = imageData.thumbnail;
-          }
-        }
-        
-        allMessages.push(message);
-      }
-    });
-    
-    // Sort by timestamp (newest first for pagination)
-    allMessages.sort((a, b) => b.timestamp - a.timestamp);
-    
-    // Filter by beforeTimestamp if provided
-    let filteredMessages = allMessages;
-    if (beforeTimestamp) {
-      filteredMessages = allMessages.filter(m => m.timestamp < beforeTimestamp);
-    }
-    
-    // Apply limit
-    if (limit && limit > 0) {
-      filteredMessages = filteredMessages.slice(0, limit);
-    }
-    
-    // Return in chronological order (oldest first for display)
-    return filteredMessages.reverse();
-    
-  } catch (err) {
-    console.error("Error loading and combining messages:", err);
-    return [];
-  }
-}, []);
 // ============================================================
-// SUB-COMPONENTS
+// SUB-COMPONENTS (keeping them as before)
 // ============================================================
 function StatusIcon({ status }: { status: MessageStatus }) {
   const configs = {
@@ -551,82 +479,79 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const userIdRef = useRef<string>(generateId());
   const usernameRef = useRef<string>("");
-  const allMessagesCache = useRef<Message[]>([]);
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // ── Load and Combine Messages Function ─────────────────────────────────
-  const loadAndCombineMessages = useCallback(async (limit?: number, beforeTimestamp?: number): Promise<Message[]> => {
+  const loadAndCombineMessages = async (limit?: number, beforeTimestamp?: number): Promise<Message[]> => {
     try {
-      // Fetch all messages and images
       const [messagesData, imagesData] = await Promise.all([
         api.getAllMessages(),
         api.getAllImages()
       ]);
       
-      // Convert messages to array
       const allMessages: Message[] = [];
       
-      Object.entries(messagesData).forEach(([id, msg]: [string, any]) => {
-        if (msg?.text && msg?.username) {
+      for (const [id, msg] of Object.entries(messagesData)) {
+        const messageData = msg as any;
+        if (messageData?.text && messageData?.username) {
           const message: Message = {
             id: id,
-            text: msg.text,
-            username: msg.username,
-            timestamp: msg.timestamp || Date.now(),
-            userId: msg.userId || "",
+            text: messageData.text,
+            username: messageData.username,
+            timestamp: messageData.timestamp || Date.now(),
+            userId: messageData.userId || "",
             status: "delivered" as MessageStatus,
-            reactions: sanitizeReactions(msg.reactions || []),
-            type: msg.type || "text",
-            imageId: msg.imageId,
+            reactions: sanitizeReactions(messageData.reactions || []),
+            type: messageData.type || "text",
+            imageId: messageData.imageId,
           };
           
-          // Attach image data if it's an image message
-          if (message.type === "image" && message.imageId && imagesData[message.imageId]) {
-            const imageData = imagesData[message.imageId];
-            message.imageUrl = imageData.full;
-            message.imageThumbnail = imageData.thumbnail;
+          if (message.type === "image" && message.imageId && imagesData && imagesData[message.imageId]) {
+            const imageData = imagesData[message.imageId] as any;
+            if (imageData && imageData.full && imageData.thumbnail) {
+              message.imageUrl = imageData.full;
+              message.imageThumbnail = imageData.thumbnail;
+            }
           }
           
           allMessages.push(message);
         }
-      });
+      }
       
-      // Sort by timestamp (newest first for pagination)
       allMessages.sort((a, b) => b.timestamp - a.timestamp);
       
-      // Filter by beforeTimestamp if provided
       let filteredMessages = allMessages;
       if (beforeTimestamp) {
         filteredMessages = allMessages.filter(m => m.timestamp < beforeTimestamp);
       }
       
-      // Apply limit
       if (limit && limit > 0) {
         filteredMessages = filteredMessages.slice(0, limit);
       }
       
-      // Return in chronological order (oldest first for display)
       return filteredMessages.reverse();
       
     } catch (err) {
       console.error("Error loading and combining messages:", err);
       return [];
     }
-  }, []);
+  };
 
   // ── Load Initial Messages ───────────────────────────────────────────
-  const loadMessages = useCallback(async () => {
+  const loadMessages = async () => {
     setIsLoading(true);
     try {
       const loadedMessages = await loadAndCombineMessages(MESSAGES_PER_PAGE);
-      allMessagesCache.current = loadedMessages;
       setMessages(loadedMessages);
       
-      // Check if there are more messages to load
-      const olderMessages = await loadAndCombineMessages(1, loadedMessages[0]?.timestamp);
-      setHasMoreMessages(olderMessages.length > 0);
+      if (loadedMessages.length > 0) {
+        const olderMessages = await loadAndCombineMessages(1, loadedMessages[0]?.timestamp);
+        setHasMoreMessages(olderMessages.length > 0);
+      } else {
+        setHasMoreMessages(false);
+      }
       
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
@@ -636,7 +561,7 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadAndCombineMessages]);
+  };
 
   // ── Load More Messages ──────────────────────────────────────────────
   const loadMoreMessages = async () => {
@@ -656,9 +581,7 @@ export default function Home() {
         const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
         
         setMessages(prev => [...olderMessages, ...prev]);
-        allMessagesCache.current = [...olderMessages, ...messages];
         
-        // Check if there are even more messages
         const evenOlderMessages = await loadAndCombineMessages(1, olderMessages[0]?.timestamp);
         setHasMoreMessages(evenOlderMessages.length > 0);
         
@@ -679,16 +602,16 @@ export default function Home() {
   };
 
   // ── User Presence Functions ─────────────────────────────────────────
-  const updateLastActive = useCallback(async () => {
+  const updateLastActive = async () => {
     if (!isJoined) return;
     try {
       await api.patchUser(userIdRef.current, { lastActive: Date.now() });
     } catch (err) {
       console.error("Error updating last active:", err);
     }
-  }, [isJoined]);
+  };
 
-  const loadOnlineUsers = useCallback(async () => {
+  const loadOnlineUsers = async () => {
     try {
       const res = await api.getUsers();
       const data: Record<string, any> = await res.json();
@@ -716,16 +639,16 @@ export default function Home() {
     } catch (err) {
       console.error("Error loading online users:", err);
     }
-  }, []);
+  };
 
-  const updateUserActivity = useCallback(() => {
+  const updateUserActivity = () => {
     if (!isJoined) return;
     if (activityTimeoutRef.current) {
       clearTimeout(activityTimeoutRef.current);
     }
     updateLastActive();
     activityTimeoutRef.current = setTimeout(() => {}, 120000);
-  }, [isJoined, updateLastActive]);
+  };
 
   // ── Effects for activity tracking ───────────────────────────────────
   useEffect(() => {
@@ -744,7 +667,7 @@ export default function Home() {
         clearTimeout(activityTimeoutRef.current);
       }
     };
-  }, [isJoined, updateUserActivity]);
+  }, [isJoined]);
 
   useEffect(() => {
     const savedUsername = localStorage.getItem("chat-username");
@@ -777,7 +700,7 @@ export default function Home() {
   };
 
   // ── User Presence Registration ──────────────────────────────────────
-  const registerUser = useCallback(async () => {
+  const registerUser = async () => {
     try {
       await api.putUser(userIdRef.current, {
         username: usernameRef.current,
@@ -788,15 +711,15 @@ export default function Home() {
     } catch (err) {
       console.error("Error registering user:", err);
     }
-  }, [loadOnlineUsers]);
+  };
 
-  const removeUser = useCallback(async () => {
+  const removeUser = async () => {
     try {
       await api.deleteUser(userIdRef.current);
     } catch (err) {
       console.error("Error removing user:", err);
     }
-  }, []);
+  };
 
   // ── Main Effects ────────────────────────────────────────────────────
   useEffect(() => {
@@ -811,13 +734,13 @@ export default function Home() {
       clearInterval(userHeartbeatRef.current);
       removeUser();
     };
-  }, [isJoined, registerUser, loadMessages, loadOnlineUsers, updateLastActive, removeUser]);
+  }, [isJoined]);
 
   useEffect(() => {
     if (!isJoined) return;
     const interval = setInterval(loadOnlineUsers, USER_REFRESH_INTERVAL);
     return () => clearInterval(interval);
-  }, [isJoined, loadOnlineUsers]);
+  }, [isJoined]);
 
   useEffect(() => {
     if (!isUserScrolled && messagesEndRef.current && messages.length > 0 && !isLoadingMore) {
@@ -924,7 +847,7 @@ export default function Home() {
   };
 
   // ── Handle Paste Event ──────────────────────────────────────────────
-  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+  const handlePaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
     
     for (let i = 0; i < items.length; i++) {
@@ -939,7 +862,7 @@ export default function Home() {
         break;
       }
     }
-  }, []);
+  };
 
   // ── Send Text Message ───────────────────────────────────────────────
   const sendMessage = async (e: React.FormEvent) => {
