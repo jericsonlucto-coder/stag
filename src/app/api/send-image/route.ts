@@ -10,6 +10,14 @@ interface ImageMessage {
   userId: string;
 }
 
+interface SendImageRequest {
+  imageBase64: string;
+  text?: string;
+  username: string;
+  userId: string;
+  timestamp: number;
+}
+
 // Same credentials as your other endpoints
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
@@ -18,22 +26,13 @@ const PUSHER_CLUSTER = "ap1";
 
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 
-// Compress and optimize image
-function compressImage(base64Image: string, maxWidth: number = 800): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // This would need to be done client-side or with a library
-    // For server-side, we'll just store the original for now
-    resolve(base64Image);
-  });
-}
-
 // Store image in Firebase as a separate node
 async function storeImageInFirebase(base64Image: string, messageId: string): Promise<string> {
-  // Check image size and compress if needed
+  // Check image size
   const imageSize = base64Image.length;
   console.log(`Original image size: ${(imageSize / 1024).toFixed(2)} KB`);
   
-  // For large images, we'll store them in a separate "images" node
+  // Store in a separate "images" node
   const imageResponse = await fetch(`${FIREBASE_DB_URL}/images/${messageId}.json`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -85,11 +84,15 @@ async function getMD5(str: string): Promise<string> {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body: SendImageRequest = await request.json();
     const { imageBase64, text, username, userId, timestamp } = body;
     
     if (!imageBase64) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
+    }
+    
+    if (!username || !userId) {
+      return NextResponse.json({ error: "Missing user information" }, { status: 400 });
     }
     
     const messageId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -136,6 +139,8 @@ export async function POST(request: Request) {
       console.error("Firebase save error:", firebaseResult);
       return NextResponse.json({ error: "Failed to save to Firebase" }, { status: 500 });
     }
+    
+    console.log("Saved to Firebase with ID:", firebaseResult.name);
     
     // Trigger Pusher event
     const payload = {
