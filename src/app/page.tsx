@@ -213,10 +213,10 @@ function JoinScreen({
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
       <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl p-8 sm:p-10 max-w-md w-full border border-white/20">
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+          <div className="w-20 h-20 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
             <NextImage src="/next.svg" alt="Logo" width={50} height={50} className="brightness-0 invert" />
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">
             Welcome to Chatto
           </h2>
           <p className="text-gray-500 mt-2 text-sm">Connect with friends in real-time</p>
@@ -237,7 +237,7 @@ function JoinScreen({
           </div>
           <button 
             type="submit" 
-            className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 font-semibold text-sm sm:text-base shadow-lg hover:shadow-xl"
+            className="w-full bg-blue-500 text-white py-3 rounded-xl hover:bg-blue-600 transition-all duration-200 font-semibold text-sm sm:text-base shadow-lg hover:shadow-xl"
           >
             Join Chat
           </button>
@@ -289,11 +289,11 @@ function ChatScreen({
       <div className="bg-white/80 backdrop-blur-md shadow-lg border-b border-white/20 flex-shrink-0">
         <div className="px-4 sm:px-6 py-3 flex justify-between items-center w-full lg:max-w-[90%] xl:max-w-[80%] mx-auto">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-md">
               <NextImage src="/next.svg" alt="Logo" width={24} height={6} className="brightness-0 invert" />
             </div>
             <div>
-              <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Chatto</h1>
+              <h1 className="text-lg sm:text-xl font-bold text-gray-800">Chatto</h1>
               <p className="text-xs text-gray-500 hidden sm:block">Real-time messaging</p>
             </div>
           </div>
@@ -329,7 +329,7 @@ function ChatScreen({
             <div className="flex flex-row h-full min-h-0">
               {/* Online Users Sidebar */}
               <div className={`fixed lg:relative lg:block lg:w-72 w-72 bg-white/95 border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 shadow-xl ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
-                <div className="p-4 border-b bg-gradient-to-r from-blue-500 to-indigo-600 sticky top-0">
+                <div className="p-4 border-b bg-blue-500 sticky top-0">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
@@ -418,7 +418,7 @@ function ChatScreen({
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                     </svg>
-                    {newMessageCount} new message{newMessageCount !== 1 ? 's' : ''}
+                    {newMessageCount} new
                   </button>
                 )}
                 
@@ -511,14 +511,14 @@ function ChatScreen({
                       />
                       <button 
                         type="submit" 
-                        className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-5 py-2 rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all font-medium text-sm flex-shrink-0 shadow-md hover:shadow-lg"
+                        className="bg-blue-500 text-white px-5 py-2 rounded-xl hover:bg-blue-600 transition-all font-medium text-sm flex-shrink-0 shadow-md hover:shadow-lg"
                       >
                         Send
                       </button>
                     </div>
                     <div className="text-xs text-gray-400 px-1 flex items-center gap-1">
                       <span>📷</span>
-                      <span>Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB, JPEG/PNG/GIF/WEBP)</span>
+                      <span>Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB)</span>
                     </div>
                   </form>
                 </div>
@@ -532,7 +532,7 @@ function ChatScreen({
 }
 
 // ============================================================
-// SUB-COMPONENTS (keeping them as before)
+// SUB-COMPONENTS
 // ============================================================
 function StatusIcon({ status }: { status: MessageStatus }) {
   const configs = {
@@ -687,7 +687,7 @@ function MessageBubble({
         <div
           className={`rounded-2xl p-2.5 sm:p-3 ${
             isOwn 
-              ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md" 
+              ? "bg-blue-500 text-white shadow-md" 
               : "bg-gray-100 text-gray-800 shadow-sm"
           } overflow-hidden`}
         >
@@ -761,16 +761,16 @@ function UserListItem({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 p-3 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all cursor-pointer ${
-        isCurrentUser ? "bg-gradient-to-r from-blue-50 to-indigo-50" : ""
+      className={`flex items-center gap-3 p-3 hover:bg-gray-50 transition-all cursor-pointer ${
+        isCurrentUser ? "bg-blue-50" : ""
       }`}
     >
       <div className="relative flex-shrink-0">
         <div
           className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shadow-md ${
             isCurrentUser
-              ? "bg-gradient-to-br from-green-400 to-green-600"
-              : "bg-gradient-to-br from-blue-400 to-indigo-500"
+              ? "bg-green-500"
+              : "bg-blue-500"
           }`}
         >
           {user.username?.charAt(0).toUpperCase()}
