@@ -18,6 +18,10 @@ interface SendImageRequest {
   timestamp: number;
 }
 
+interface FirebaseResponse {
+  name: string;
+}
+
 // Same credentials as your other endpoints
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
@@ -133,7 +137,7 @@ export async function POST(request: Request) {
       }),
     });
     
-    const firebaseResult = await firebaseResponse.json();
+    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
     
     if (!firebaseResponse.ok) {
       console.error("Firebase save error:", firebaseResult);
@@ -175,6 +179,9 @@ export async function POST(request: Request) {
         warning: "Saved but Pusher notification failed"
       });
     }
+    
+    const pusherResult = await pusherResponse.json();
+    console.log("Pusher send result:", pusherResult);
     
     return NextResponse.json({ 
       success: true, 
