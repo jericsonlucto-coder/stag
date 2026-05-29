@@ -11,6 +11,12 @@ interface ImageMessageProps {
   onImageClick?: (url: string) => void;
 }
 
+interface FirebaseImageData {
+  data: string;
+  size: number;
+  timestamp: number;
+}
+
 export default function ImageMessage({ 
   imageUrl, 
   text, 
@@ -31,7 +37,10 @@ export default function ImageMessage({
     const fetchImage = async () => {
       try {
         const response = await fetch(imageUrl);
-        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data: FirebaseImageData = await response.json();
         if (data && data.data) {
           setImageDataUrl(data.data);
         } else {
@@ -81,6 +90,10 @@ export default function ImageMessage({
                 alt="Shared image"
                 className={`rounded-lg max-w-full max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity`}
                 onClick={() => onImageClick?.(imageDataUrl)}
+                onError={() => {
+                  setImageError(true);
+                  setIsLoading(false);
+                }}
               />
             )}
             
