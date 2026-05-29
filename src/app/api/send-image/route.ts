@@ -8,6 +8,10 @@ interface SendImageRequest {
   timestamp: number;
 }
 
+interface FirebaseResponse {
+  name: string;
+}
+
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
 const PUSHER_SECRET = "bbd18207d17c2f39529e";
@@ -83,7 +87,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to save to Firebase", details: errorText }, { status: 500 });
     }
     
-    const firebaseResult = await firebaseResponse.json();
+    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
     console.log("Saved to Firebase successfully with ID:", firebaseResult.name);
     
     // Trigger Pusher event
