@@ -1,15 +1,5 @@
 import { NextResponse } from "next/server";
 
-interface ImageMessage {
-  id: string;
-  imageUrl: string;
-  imageStoragePath: string;
-  text?: string;
-  username: string;
-  timestamp: number;
-  userId: string;
-}
-
 interface SendImageRequest {
   imageBase64: string;
   text?: string;
@@ -18,33 +8,11 @@ interface SendImageRequest {
   timestamp: number;
 }
 
-interface FirebaseResponse {
-  name: string;
-}
-
-// Same credentials as your other endpoints
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
 const PUSHER_SECRET = "bbd18207d17c2f39529e";
 const PUSHER_CLUSTER = "ap1";
-
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
-
-// Store image as base64 directly in the message (simpler approach)
-async function prepareImageForStorage(base64Image: string, messageId: string): Promise<string> {
-  // Validate base64 format
-  if (!base64Image.startsWith('data:image/')) {
-    throw new Error('Invalid image format');
-  }
-  
-  // Get image size for logging
-  const imageSize = base64Image.length;
-  const sizeInKB = (imageSize / 1024).toFixed(2);
-  console.log(`Storing image size: ${sizeInKB} KB (base64)`);
-  
-  // Return the base64 string directly - it will be stored in the message
-  return base64Image;
-}
 
 async function getSignature(secret: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -77,6 +45,8 @@ export async function POST(request: Request) {
     const body: SendImageRequest = await request.json();
     const { imageBase64, text, username, userId, timestamp } = body;
     
+    console.log("Received image request:", { username, userId, textLength: text?.length, imageLength: imageBase64?.length });
+    
     if (!imageBase64) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
@@ -87,20 +57,10 @@ export async function POST(request: Request) {
     
     const messageId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
     
-    // Prepare image for storage (just validate, don't store separately)
-    let imageData;
-    try {
-      imageData = await prepareImageForStorage(imageBase64, messageId);
-      console.log("Image prepared for storage successfully");
-    } catch (error) {
-      console.error("Image preparation failed:", error);
-      return NextResponse.json({ error: "Failed to process image" }, { status: 500 });
-    }
-    
-    const imageMessage = {
-      id: messageId,
+    // Create message object similar to your text messages
+    const messageData = {
       type: "image",
-      imageBase64: imageData, // Store the actual image in the message
+      imageBase64: imageBase64,
       text: text || "",
       username: username,
       timestamp: timestamp || Date.now(),
@@ -108,29 +68,32 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString()
     };
     
-    // Save message directly to Firebase messages.json - same as your text messages!
+    console.log("Saving to Firebase:", { messageId, type: messageData.type, username: messageData.username });
+    
+    // Save to Firebase
     const firebaseResponse = await fetch(`${FIREBASE_DB_URL}/messages.json`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(imageMessage),
+      body: JSON.stringify(messageData),
     });
     
     if (!firebaseResponse.ok) {
-      console.error("Firebase save error:", await firebaseResponse.text());
-      return NextResponse.json({ error: "Failed to save to Firebase" }, { status: 500 });
+      const errorText = await firebaseResponse.text();
+      console.error("Firebase error:", errorText);
+      return NextResponse.json({ error: "Failed to save to Firebase", details: errorText }, { status: 500 });
     }
     
-    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
-    console.log("Saved image message to Firebase with ID:", firebaseResult.name);
+    const firebaseResult = await firebaseResponse.json();
+    console.log("Saved to Firebase successfully with ID:", firebaseResult.name);
     
     // Trigger Pusher event
     const payload = {
       name: "new-image",
       channel: "private-chat-channel",
-      data: JSON.stringify({ 
+      data: JSON.stringify({
         id: messageId,
         type: "image",
-        imageBase64: imageData,
+        imageBase64: imageBase64,
         text: text || "",
         username: username,
         timestamp: timestamp || Date.now(),
@@ -154,23 +117,27 @@ export async function POST(request: Request) {
     
     if (!pusherResponse.ok) {
       const errorText = await pusherResponse.text();
-      console.error("Pusher API error:", errorText);
-      return NextResponse.json({ 
-        success: true, 
-        message: imageMessage,
-        firebaseId: firebaseResult.name,
-        warning: "Saved but Pusher notification failed"
-      });
+      console.error("Pusher error:", errorText);
+    } else {
+      console.log("Pusher notification sent successfully");
     }
     
-    return NextResponse.json({ 
-      success: true, 
-      message: imageMessage,
-      firebaseId: firebaseResult.name 
+    return NextResponse.json({
+      success: true,
+      message: {
+        id: messageId,
+        imageBase64: imageBase64,
+        text: text || "",
+        username: username,
+        timestamp: timestamp || Date.now(),
+        userId: userId,
+        type: "image"
+      },
+      firebaseId: firebaseResult.name
     });
     
   } catch (error) {
-    console.error("Error sending image:", error);
+    console.error("Error in send-image:", error);
     return NextResponse.json(
       { error: "Failed to send image", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
