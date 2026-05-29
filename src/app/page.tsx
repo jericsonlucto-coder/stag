@@ -699,17 +699,24 @@
   }, []);
 
   // ── Send Image Function ───────────────────────────────────
-  const sendImage = async (base64Image: string, file: File) => {
-  if (!username) return;
+ const sendImage = async (base64Image: string, file: File) => {
+  console.log("sendImage called", { username, imageSize: base64Image.length });
+  
+  if (!username) {
+    console.error("No username");
+    return;
+  }
   
   setIsSendingImage(true);
   updateUserActivity();
   
   const messageId = generateId();
+  console.log("Generated message ID:", messageId);
+  
   const newMessage: Message = {
     id: messageId,
     text: "",
-    imageBase64: "",
+    imageBase64: base64Image, // Use the actual image immediately
     username,
     timestamp: Date.now(),
     userId: userIdRef.current,
@@ -718,11 +725,16 @@
     type: "image",
   };
   
-  // Add temporary message
-  setMessages((prev) => [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp));
+  // Add temporary message with the actual image
+  setMessages((prev) => {
+    const updated = [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+    console.log("Added temporary message, total messages:", updated.length);
+    return updated;
+  });
   scrollToBottom();
   
   try {
+    console.log("Sending to API...");
     const response = await fetch("/api/send-image", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -735,29 +747,19 @@
       }),
     });
     
-    const result: SendImageResponse = await response.json();
+    console.log("API response status:", response.status);
+    const result = await response.json();
+    console.log("API response:", result);
     
-    if (response.ok && result.success && result.message) {
-      // Success - update message with actual data
+    if (response.ok && result.success) {
+      console.log("Image sent successfully");
+      // Update status to delivered
       setMessages((prev) =>
-        prev.map((msg) => {
-          if (msg.id !== messageId) return msg;
-          
-          // Create updated message with proper typing
-          const updatedMessage: Message = {
-            id: messageId,
-            text: result.message.text || "",
-            imageBase64: result.message.imageBase64,
-            username: result.message.username,
-            timestamp: result.message.timestamp,
-            userId: result.message.userId,
-            status: "delivered" as MessageStatus,
-            reactions: msg.reactions || [],
-            type: "image" as const,
-          };
-          
-          return updatedMessage;
-        })
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, status: "delivered" as MessageStatus }
+            : msg
+        )
       );
       
       // Clear status after delay
@@ -769,7 +771,6 @@
         );
       }, STATUS_CLEAR_DELAY);
     } else {
-      // API returned error
       console.error("API returned error:", result.error || result.details);
       setMessages((prev) =>
         prev.map((msg) =>
