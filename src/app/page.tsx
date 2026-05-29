@@ -62,6 +62,13 @@ const formatTime = (timestamp: number) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+const updateTabTitle = (count: number) => {
+  if (count > 0) {
+    document.title = `(${count}) Chatto - Real-time Chat`;
+  } else {
+    document.title = `Chatto - Real-time Chat`;
+  }
+};
 
 const sanitizeReactions = (reactions: Reaction[] | undefined): Reaction[] =>
   (reactions || []).filter((r) => r !== null && r !== undefined);
@@ -283,6 +290,10 @@ function ChatScreen({
   onScroll,
   updateUserActivity,
 }: any) {
+  useEffect(() => {
+  updateTabTitle(newMessageCount);
+}, [newMessageCount]);
+  
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-100 overflow-hidden">
       {/* Header */}
