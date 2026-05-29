@@ -15,6 +15,7 @@ interface FirebaseImageData {
   data: string;
   size: number;
   timestamp: number;
+  contentType?: string;
 }
 
 export default function ImageMessage({ 
@@ -36,14 +37,20 @@ export default function ImageMessage({
     // Fetch image from Firebase
     const fetchImage = async () => {
       try {
+        console.log("Fetching image from:", imageUrl);
         const response = await fetch(imageUrl);
+        
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
+        
         const data: FirebaseImageData = await response.json();
-        if (data && data.data) {
+        
+        if (data && data.data && typeof data.data === 'string' && data.data.startsWith('data:image/')) {
           setImageDataUrl(data.data);
+          console.log("Image loaded successfully");
         } else {
+          console.error("Invalid image data format:", data);
           setImageError(true);
         }
       } catch (error) {
@@ -54,7 +61,12 @@ export default function ImageMessage({
       }
     };
     
-    fetchImage();
+    if (imageUrl) {
+      fetchImage();
+    } else {
+      setIsLoading(false);
+      setImageError(true);
+    }
   }, [imageUrl]);
   
   return (
@@ -90,7 +102,8 @@ export default function ImageMessage({
                 alt="Shared image"
                 className={`rounded-lg max-w-full max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity`}
                 onClick={() => onImageClick?.(imageDataUrl)}
-                onError={() => {
+                onError={(e) => {
+                  console.error("Image failed to load:", e);
                   setImageError(true);
                   setIsLoading(false);
                 }}
