@@ -3,8 +3,6 @@
 import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
-import ImageMessage from "@/components/ImageMessage";
-import ImageUploadModal from "@/components/ImageUploadModal";
 import ImageViewer from "@/components/ImageViewer";
 
 // ============================================================
@@ -167,7 +165,7 @@ const api = {
 };
 
 // ============================================================
-// SUB-COMPONENTS (Internal)
+// SUB-COMPONENTS
 // ============================================================
 function StatusIcon({ status }: { status: MessageStatus }) {
   const configs = {
@@ -290,6 +288,79 @@ function ReactionDisplay({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ImageMessage({
+  imageUrl,
+  username,
+  timestamp,
+  text,
+  isOwn,
+  onImageClick,
+}: {
+  imageUrl: string;
+  username: string;
+  timestamp: number;
+  text?: string;
+  isOwn: boolean;
+  onImageClick?: (url: string) => void;
+}) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  return (
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-2 sm:mb-3`}>
+      <div
+        className={`max-w-[85%] sm:max-w-[70%] md:max-w-[60%] rounded-lg p-1.5 sm:p-2.5 ${
+          isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"
+        }`}
+      >
+        <div className="flex items-center gap-1 sm:gap-2 mb-0.5">
+          <span className="font-semibold text-[11px] sm:text-sm truncate max-w-[120px] sm:max-w-[200px]">
+            {username}
+          </span>
+          <span className="text-[8px] sm:text-xs opacity-75 flex-shrink-0">
+            {formatTime(timestamp)}
+          </span>
+        </div>
+        
+        {text && (
+          <p className="break-words whitespace-pre-wrap text-[11px] sm:text-sm mb-2">
+            {text}
+          </p>
+        )}
+        
+        <div className="relative">
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-200 rounded-lg">
+              <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-500"></div>
+            </div>
+          )}
+          {error ? (
+            <div className="bg-red-100 text-red-600 p-2 sm:p-4 rounded-lg text-center text-[10px] sm:text-sm">
+              Failed to load image
+            </div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageUrl}
+              alt="Shared image"
+              className={`rounded-lg max-w-full cursor-pointer hover:opacity-90 transition-opacity ${
+                isLoading ? "opacity-0" : "opacity-100"
+              }`}
+              onLoad={() => setIsLoading(false)}
+              onError={() => {
+                setIsLoading(false);
+                setError(true);
+              }}
+              onClick={() => onImageClick && onImageClick(imageUrl)}
+              style={{ maxHeight: "300px", objectFit: "contain" }}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -426,12 +497,12 @@ export default function Home() {
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{ file: File; preview: string; caption: string } | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -743,6 +814,119 @@ export default function Home() {
     };
   }, [isJoined, updateLastActive, updateUserActivity]);
 
+  // ── Handle Image Selection ────────────────────────────────
+  const handleImageSelect = (file: File) => {
+    // Validate file type
+    const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    if (!validTypes.includes(file.type)) {
+      alert("Please select a valid image file (JPEG, PNG, GIF, or WEBP)");
+      return;
+    }
+    
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File too large. Maximum size is 5MB.");
+      return;
+    }
+    
+    const preview = URL.createObjectURL(file);
+    setPendingImage({ file, preview, caption: "" });
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          handleImageSelect(file);
+          e.preventDefault();
+          break;
+        }
+      }
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImageSelect(file);
+    }
+  };
+
+  const cancelImageUpload = () => {
+    if (pendingImage) {
+      URL.revokeObjectURL(pendingImage.preview);
+      setPendingImage(null);
+    }
+  };
+
+  const sendImageMessage = async () => {
+    if (!pendingImage) return;
+    
+    updateUserActivity();
+    await updateLastActive();
+    
+    const messageId = generateId();
+    const imageMessage: Message = {
+      id: messageId,
+      imageUrl: pendingImage.preview,
+      type: "image",
+      text: pendingImage.caption || undefined,
+      username,
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+    };
+    
+    setMessages((prev) => [...prev, imageMessage].sort((a, b) => a.timestamp - b.timestamp));
+    
+    try {
+      const response = await api.uploadImage(pendingImage.file, pendingImage.caption, username, userIdRef.current, messageId);
+      
+      if (response.ok) {
+        const data = await response.json() as { success: boolean; messageId: string; imageUrl: string };
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId
+              ? { ...msg, imageUrl: data.imageUrl, status: "delivered" }
+              : msg
+          )
+        );
+        
+        await api.sendMessage({
+          ...imageMessage,
+          id: messageId,
+          imageUrl: data.imageUrl,
+          status: "delivered",
+        });
+      } else {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId ? { ...msg, status: "error" } : msg
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Error sending image:", err);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, status: "error" } : msg
+        )
+      );
+    } finally {
+      cancelImageUpload();
+      setIsUserScrolled(false);
+      setShowScrollButton(false);
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
+  };
+
   // ── Pusher ────────────────────────────────────────────────
   useEffect(() => {
     if (!isJoined) return;
@@ -885,69 +1069,6 @@ export default function Home() {
     }, 100);
   };
 
- const handleImageUpload = async (file: File, caption: string) => {
-  setIsUploadingImage(true);
-  const messageId = generateId();
-  
-  // Create temporary preview URL
-  const tempImageUrl = URL.createObjectURL(file);
-  
-  const imageMessage: Message = {
-    id: messageId,
-    imageUrl: tempImageUrl,
-    type: "image",
-    text: caption || undefined,
-    username,
-    timestamp: Date.now(),
-    userId: userIdRef.current,
-    status: "sending",
-    reactions: [],
-  };
-  
-  setMessages((prev) => [...prev, imageMessage].sort((a, b) => a.timestamp - b.timestamp));
-  
-  try {
-    const response = await api.uploadImage(file, caption, username, userIdRef.current, messageId);
-    
-    if (response.ok) {
-      const data = await response.json() as { success: boolean; messageId: string; imageUrl: string };
-      // Update the message with the permanent URL
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? { ...msg, imageUrl: data.imageUrl, status: "delivered" }
-            : msg
-        )
-      );
-      
-      // Also trigger Pusher event for real-time
-      await api.sendMessage({
-        ...imageMessage,
-        id: messageId,
-        imageUrl: data.imageUrl,
-        status: "delivered",
-      });
-    } else {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId ? { ...msg, status: "error" } : msg
-        )
-      );
-    }
-  } catch (err) {
-    console.error("Error uploading image:", err);
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId ? { ...msg, status: "error" } : msg
-      )
-    );
-  } finally {
-    setIsUploadingImage(false);
-    // Clean up temporary URL
-    URL.revokeObjectURL(tempImageUrl);
-  }
-};
-
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
@@ -1035,7 +1156,6 @@ export default function Home() {
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Hamburger Menu Button - Mobile Only */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1045,7 +1165,6 @@ export default function Home() {
               </svg>
             </button>
             
-            {/* Desktop User Info */}
             <div className="hidden sm:flex items-center gap-3">
               <span className="text-sm text-gray-600">Logged in as:</span>
               <span className="font-medium text-gray-800 truncate max-w-[150px]">{username}</span>
@@ -1057,7 +1176,6 @@ export default function Home() {
               </button>
             </div>
             
-            {/* Mobile User Info */}
             <div className="sm:hidden flex items-center gap-1">
               <span className="text-xs font-medium text-gray-800 truncate max-w-[100px]">{username}</span>
             </div>
@@ -1070,7 +1188,7 @@ export default function Home() {
         <div className="w-full lg:max-w-[70%] h-full min-h-0">
           <div className="bg-white rounded-lg sm:rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
             <div className="flex flex-row h-full min-h-0">
-              {/* Online Users Sidebar - Hidden on mobile by default */}
+              {/* Online Users Sidebar */}
               <div
                 className={`
                   fixed lg:relative lg:block lg:w-64 w-64 bg-white border-r z-50
@@ -1115,7 +1233,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Overlay for mobile when sidebar is open */}
+              {/* Overlay for mobile */}
               {isMobileMenuOpen && (
                 <div
                   className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
@@ -1184,6 +1302,39 @@ export default function Home() {
                   </button>
                 )}
                 
+                {/* Image Preview Pending */}
+                {pendingImage && (
+                  <div className="absolute bottom-20 left-2 right-2 sm:left-4 sm:right-4 z-20 bg-white rounded-lg shadow-lg border p-3">
+                    <div className="flex gap-3">
+                      <img src={pendingImage.preview} alt="Preview" className="w-16 h-16 object-cover rounded" />
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          placeholder="Add a caption..."
+                          value={pendingImage.caption}
+                          onChange={(e) => setPendingImage({ ...pendingImage, caption: e.target.value })}
+                          className="w-full px-2 py-1 border rounded text-sm mb-2"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={sendImageMessage}
+                            className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                          >
+                            Send
+                          </button>
+                          <button
+                            onClick={cancelImageUpload}
+                            className="bg-gray-300 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-400"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 <div 
                   ref={messagesContainerRef}
                   onScroll={handleScroll}
@@ -1225,13 +1376,20 @@ export default function Home() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input Area with Image Button */}
+                {/* Input Area */}
                 <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
                   <form onSubmit={sendMessage}>
                     <div className="flex gap-1 sm:gap-2">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
                       <button
                         type="button"
-                        onClick={() => setIsImageModalOpen(true)}
+                        onClick={() => fileInputRef.current?.click()}
                         className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors"
                         title="Upload image"
                       >
@@ -1243,9 +1401,10 @@ export default function Home() {
                         type="text"
                         value={inputMessage}
                         onChange={(e) => setInputMessage(e.target.value)}
+                        onPaste={handlePaste}
                         onFocus={updateUserActivity}
                         onClick={updateUserActivity}
-                        placeholder="Type a message..."
+                        placeholder="Type a message or paste an image..."
                         className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0"
                         maxLength={500}
                       />
@@ -1264,14 +1423,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Modals */}
-      <ImageUploadModal
-        isOpen={isImageModalOpen}
-        onClose={() => setIsImageModalOpen(false)}
-        onUpload={handleImageUpload}
-        isUploading={isUploadingImage}
-      />
-
+      {/* Image Viewer Modal */}
       {selectedImage && (
         <ImageViewer
           imageUrl={selectedImage}
