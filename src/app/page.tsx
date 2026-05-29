@@ -1125,49 +1125,50 @@ const sendImageMessage = useCallback(async () => {
     });
     const channel = pusher.subscribe("private-chat-channel");
 
-    channel.bind("new-message", (data: Message) => {
-      setMessages((prev) => {
-        const existingIndex = prev.findIndex((m) => m.id === data.id);
-    
-        if (existingIndex !== -1) {
-          // ✅ Always update imageUrl if the incoming one is a real URL (not blob)
-          const existing = prev[existingIndex];
-          const incomingIsRealUrl =
-            data.imageUrl && !data.imageUrl.startsWith("blob:");
-          const existingIsBlobUrl =
-            existing.imageUrl?.startsWith("blob:") || !existing.imageUrl;
-    
-          if (incomingIsRealUrl && existingIsBlobUrl) {
-            // Replace blob with CDN url
-            const updated = [...prev];
-            updated[existingIndex] = {
-              ...existing,
-              imageUrl: data.imageUrl,
-              status: "delivered",
-            };
-            return updated;
-          }
-          // Already have a real URL, skip
-          return prev;
-        }
-    
-        // New message from another user
-        const newMessages = [
-          ...prev,
-          {
-            ...data,
-            type: data.type || (data.imageUrl ? "image" : "text"),
-            status: "delivered" as MessageStatus,
-            reactions: sanitizeReactions(data.reactions),
-          },
-        ].sort((a, b) => a.timestamp - b.timestamp);
-    
-        if (isUserScrolled) {
-          setNewMessageCount((c) => c + 1);
-        }
-        return newMessages;
-      });
-    });
+   channel.bind("new-message", (data: Message) => {
+  console.log("Pusher received message:", data); // ✅ Add this to debug
+  
+  setMessages((prev) => {
+    const existingIndex = prev.findIndex((m) => m.id === data.id);
+
+    if (existingIndex !== -1) {
+      const existing = prev[existingIndex];
+      const incomingIsRealUrl =
+        data.imageUrl && !data.imageUrl.startsWith("blob:");
+      const existingIsBlobUrl =
+        existing.imageUrl?.startsWith("blob:") || !existing.imageUrl;
+
+      if (incomingIsRealUrl && existingIsBlobUrl) {
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...existing,
+          imageUrl: data.imageUrl,
+          status: "delivered",
+        };
+        return updated;
+      }
+      return prev;
+    }
+
+    // ✅ New message from another user — force correct type
+    const newMessage: Message = {
+      ...data,
+      // ✅ Explicitly derive type — don't trust what's sent
+      type: data.imageUrl ? "image" : "text",
+      status: "delivered" as MessageStatus,
+      reactions: sanitizeReactions(data.reactions),
+    };
+
+    const newMessages = [...prev, newMessage].sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
+
+    if (isUserScrolled) {
+      setNewMessageCount((c) => c + 1);
+    }
+    return newMessages;
+  });
+});
 
     channel.bind(
       "message-reaction",
