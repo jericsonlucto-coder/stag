@@ -9,6 +9,10 @@ interface ImageMessage {
   text?: string;
 }
 
+interface FirebaseResponse {
+  name: string;
+}
+
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 
 export async function POST(request: Request) {
@@ -52,15 +56,6 @@ export async function POST(request: Request) {
     const imageUrl = `data:${file.type};base64,${base64Image}`;
 
     // Save to Firebase
-    const imageMessage: ImageMessage = {
-      id: messageId,
-      imageUrl,
-      username,
-      timestamp: Date.now(),
-      userId,
-      text: text || undefined,
-    };
-
     const firebaseResponse = await fetch(`${FIREBASE_DB_URL}/messages.json`, {
       method: "POST",
       headers: {
@@ -70,21 +65,23 @@ export async function POST(request: Request) {
         type: "image",
         imageUrl,
         username,
-        timestamp: imageMessage.timestamp,
+        timestamp: Date.now(),
         userId,
         text: text || undefined,
         createdAt: new Date().toISOString()
       }),
     });
 
-    const firebaseResult = await firebaseResponse.json();
-
     if (!firebaseResponse.ok) {
+      const errorText = await firebaseResponse.text();
+      console.error("Firebase save error:", errorText);
       return NextResponse.json(
         { error: "Failed to save to Firebase" },
         { status: 500 }
       );
     }
+
+    const firebaseResult = await firebaseResponse.json() as FirebaseResponse;
 
     return NextResponse.json({ 
       success: true, 
