@@ -211,7 +211,7 @@ function JoinScreen({
 }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl p-8 sm:p-10 max-w-md w-full border border-white/20">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 sm:p-10 max-w-md w-full">
         <div className="text-center mb-8">
           <div className="w-20 h-20 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
             <NextImage src="/next.svg" alt="Logo" width={50} height={50} className="brightness-0 invert" />
@@ -228,7 +228,7 @@ function JoinScreen({
               type="text"
               value={username}
               onChange={(e) => onUsernameChange(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm sm:text-base bg-white/50"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm sm:text-base bg-white"
               placeholder="Enter your username"
               required
               maxLength={20}
@@ -286,7 +286,7 @@ function ChatScreen({
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-100 overflow-hidden">
       {/* Header */}
-      <div className="bg-white/80 backdrop-blur-md shadow-lg border-b border-white/20 flex-shrink-0">
+      <div className="bg-white shadow-lg border-b border-gray-200 flex-shrink-0">
         <div className="px-4 sm:px-6 py-3 flex justify-between items-center w-full lg:max-w-[90%] xl:max-w-[80%] mx-auto">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-md">
@@ -325,10 +325,10 @@ function ChatScreen({
       {/* Chat Container */}
       <div className="flex-1 flex items-center justify-center p-4 overflow-hidden min-h-0">
         <div className="w-full lg:max-w-[90%] xl:max-w-[80%] h-full min-h-0">
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden h-full flex flex-col border border-white/20">
+          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden h-full flex flex-col">
             <div className="flex flex-row h-full min-h-0">
               {/* Online Users Sidebar */}
-              <div className={`fixed lg:relative lg:block lg:w-72 w-72 bg-white/95 border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 shadow-xl ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
+              <div className={`fixed lg:relative lg:block lg:w-72 w-72 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 shadow-xl ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
                 <div className="p-4 border-b bg-blue-500 sticky top-0">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -375,7 +375,7 @@ function ChatScreen({
                     <button 
                       onClick={onLoadMoreMessages} 
                       disabled={isLoadingMore} 
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm transition-all flex items-center gap-2 shadow-md hover:shadow-lg"
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm transition-all flex items-center gap-2 shadow-md"
                     >
                       {isLoadingMore ? (
                         <>
@@ -401,7 +401,7 @@ function ChatScreen({
                 {showScrollButton && newMessageCount === 0 && (
                   <button 
                     onClick={onScrollToBottom} 
-                    className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full p-2 shadow-lg hover:bg-blue-600 transition-all z-10 hover:scale-110"
+                    className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full p-2 shadow-lg hover:bg-blue-600 transition-all z-10"
                   >
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
@@ -466,14 +466,14 @@ function ChatScreen({
                 </div>
 
                 {/* Input Area */}
-                <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white/95 backdrop-blur-sm">
+                <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white">
                   <form onSubmit={onSendMessage} className="space-y-2">
                     <div className="flex gap-2">
                       <button 
                         type="button" 
                         onClick={onImageUpload} 
                         disabled={isUploading} 
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105"
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Send image (max 2MB) - You can also paste images"
                       >
                         {isUploading ? (
@@ -506,12 +506,12 @@ function ChatScreen({
                         onClick={updateUserActivity}
                         onPaste={onPaste}
                         placeholder="Type a message or paste an image..."
-                        className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all bg-white/50"
+                        className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all bg-white"
                         maxLength={500}
                       />
                       <button 
                         type="submit" 
-                        className="bg-blue-500 text-white px-5 py-2 rounded-xl hover:bg-blue-600 transition-all font-medium text-sm flex-shrink-0 shadow-md hover:shadow-lg"
+                        className="bg-blue-500 text-white px-5 py-2 rounded-xl hover:bg-blue-600 transition-all font-medium text-sm flex-shrink-0 shadow-md"
                       >
                         Send
                       </button>
@@ -717,9 +717,7 @@ function MessageBubble({
               <img
                 src={message.imageUrl}
                 alt="Shared image"
-                className={`max-w-full max-h-[300px] rounded-lg cursor-pointer transition-opacity ${
-                  !imageLoaded ? 'opacity-0' : 'opacity-100'
-                } hover:scale-105 transition-transform`}
+                className="max-w-full max-h-[300px] rounded-lg cursor-pointer"
                 onClick={() => window.open(message.imageUrl, '_blank')}
                 onLoad={() => setImageLoaded(true)}
                 style={{ maxWidth: '100%', height: 'auto' }}
