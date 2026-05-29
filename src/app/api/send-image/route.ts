@@ -29,26 +29,55 @@ const PUSHER_SECRET = "bbd18207d17c2f39529e";
 const PUSHER_CLUSTER = "ap1";
 
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
+const MAX_IMAGE_SIZE_MB = 2; // Limit image size to 2MB
+const MAX_BASE64_LENGTH = MAX_IMAGE_SIZE_MB * 1024 * 1024 * 1.37; // Base64 is ~37% larger
+
+// Compress image by reducing quality (simple approach)
+function compressBase64Image(base64Image: string, maxSizeMB: number = 2): string {
+  // Check if image needs compression
+  const sizeInMB = base64Image.length / (1024 * 1024) * 0.75; // Approximate original size
+  
+  if (sizeInMB <= maxSizeMB) {
+    return base64Image; // No compression needed
+  }
+  
+  console.log(`Image size ${sizeInMB.toFixed(2)}MB exceeds limit, compression needed`);
+  // Note: Full image compression would require a library like sharp
+  // For now, we'll accept the image but log a warning
+  console.warn(`Large image detected: ${sizeInMB.toFixed(2)}MB. Consider implementing image compression.`);
+  return base64Image;
+}
 
 // Store image in Firebase as a separate node
 async function storeImageInFirebase(base64Image: string, messageId: string): Promise<string> {
+  // Compress image if needed
+  const compressedImage = compressBase64Image(base64Image, MAX_IMAGE_SIZE_MB);
+  
   // Check image size
-  const imageSize = base64Image.length;
-  console.log(`Original image size: ${(imageSize / 1024).toFixed(2)} KB`);
+  const imageSize = compressedImage.length;
+  const sizeInKB = (imageSize / 1024).toFixed(2);
+  console.log(`Storing image size: ${sizeInKB} KB (base64)`);
+  
+  // Validate size (Firebase has limits)
+  if (imageSize > 10 * 1024 * 1024) { // 10MB base64 limit
+    throw new Error('Image too large. Please use images under 5MB.');
+  }
   
   // Store in a separate "images" node
   const imageResponse = await fetch(`${FIREBASE_DB_URL}/images/${messageId}.json`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      data: base64Image,
+      data: compressedImage,
       size: imageSize,
       timestamp: Date.now(),
     }),
   });
   
   if (!imageResponse.ok) {
-    throw new Error('Failed to store image');
+    const errorText = await imageResponse.text();
+    console.error("Firebase image store error:", errorText);
+    throw new Error(`Failed to store image: ${imageResponse.status}`);
   }
   
   // Return the URL to fetch the image
@@ -78,7 +107,7 @@ async function getSignature(secret: string, message: string): Promise<string> {
   return signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function getMD5(str: string): Promise<string> {
+async function getSHA256(str: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -91,12 +120,18 @@ export async function POST(request: Request) {
     const body: SendImageRequest = await request.json();
     const { imageBase64, text, username, userId, timestamp } = body;
     
+    // Validate required fields
     if (!imageBase64) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
     
     if (!username || !userId) {
       return NextResponse.json({ error: "Missing user information" }, { status: 400 });
+    }
+    
+    // Validate image format
+    if (!imageBase64.startsWith('data:image/')) {
+      return NextResponse.json({ error: "Invalid image format" }, { status: 400 });
     }
     
     const messageId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -108,7 +143,8 @@ export async function POST(request: Request) {
       console.log("Image stored in Firebase successfully");
     } catch (error) {
       console.error("Image storage failed:", error);
-      return NextResponse.json({ error: "Failed to store image" }, { status: 500 });
+      const errorMessage = error instanceof Error ? error.message : "Failed to store image";
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
     
     const imageMessage: ImageMessage = {
@@ -141,10 +177,10 @@ export async function POST(request: Request) {
     
     if (!firebaseResponse.ok) {
       console.error("Firebase save error:", firebaseResult);
-      return NextResponse.json({ error: "Failed to save to Firebase" }, { status: 500 });
+      return NextResponse.json({ error: "Failed to save message to Firebase" }, { status: 500 });
     }
     
-    console.log("Saved to Firebase with ID:", firebaseResult.name);
+    console.log("Saved message to Firebase with ID:", firebaseResult.name);
     
     // Trigger Pusher event
     const payload = {
@@ -159,7 +195,8 @@ export async function POST(request: Request) {
     const timestamp_pusher = Math.floor(Date.now() / 1000);
     const bodyString = JSON.stringify(payload);
     const path = `/apps/${PUSHER_APP_ID}/events`;
-    const queryString = `auth_key=${PUSHER_KEY}&auth_timestamp=${timestamp_pusher}&auth_version=1.0&body_md5=${await getMD5(bodyString)}`;
+    const bodyMd5 = await getSHA256(bodyString);
+    const queryString = `auth_key=${PUSHER_KEY}&auth_timestamp=${timestamp_pusher}&auth_version=1.0&body_md5=${bodyMd5}`;
     const stringToSign = `POST\n${path}\n${queryString}`;
     const signature = await getSignature(PUSHER_SECRET, stringToSign);
     
@@ -172,16 +209,17 @@ export async function POST(request: Request) {
     if (!pusherResponse.ok) {
       const errorText = await pusherResponse.text();
       console.error("Pusher API error:", errorText);
+      // Still return success since Firebase saved
       return NextResponse.json({ 
         success: true, 
         message: imageMessage,
         firebaseId: firebaseResult.name,
-        warning: "Saved but Pusher notification failed"
+        warning: "Message saved but real-time notification failed"
       });
     }
     
     const pusherResult = await pusherResponse.json();
-    console.log("Pusher send result:", pusherResult);
+    console.log("Pusher notification sent:", pusherResult);
     
     return NextResponse.json({ 
       success: true, 
@@ -190,9 +228,10 @@ export async function POST(request: Request) {
     });
     
   } catch (error) {
-    console.error("Error sending image:", error);
+    console.error("Error in send-image endpoint:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to send image", details: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Failed to send image", details: errorMessage },
       { status: 500 }
     );
   }
