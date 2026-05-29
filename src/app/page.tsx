@@ -885,68 +885,68 @@ export default function Home() {
     }, 100);
   };
 
-  const handleImageUpload = async (file: File, caption: string) => {
-    setIsUploadingImage(true);
-    const messageId = generateId();
+ const handleImageUpload = async (file: File, caption: string) => {
+  setIsUploadingImage(true);
+  const messageId = generateId();
+  
+  // Create temporary preview URL
+  const tempImageUrl = URL.createObjectURL(file);
+  
+  const imageMessage: Message = {
+    id: messageId,
+    imageUrl: tempImageUrl,
+    type: "image",
+    text: caption || undefined,
+    username,
+    timestamp: Date.now(),
+    userId: userIdRef.current,
+    status: "sending",
+    reactions: [],
+  };
+  
+  setMessages((prev) => [...prev, imageMessage].sort((a, b) => a.timestamp - b.timestamp));
+  
+  try {
+    const response = await api.uploadImage(file, caption, username, userIdRef.current, messageId);
     
-    // Create temporary preview URL
-    const tempImageUrl = URL.createObjectURL(file);
-    
-    const imageMessage: Message = {
-      id: messageId,
-      imageUrl: tempImageUrl,
-      type: "image",
-      text: caption || undefined,
-      username,
-      timestamp: Date.now(),
-      userId: userIdRef.current,
-      status: "sending",
-      reactions: [],
-    };
-    
-    setMessages((prev) => [...prev, imageMessage].sort((a, b) => a.timestamp - b.timestamp));
-    
-    try {
-      const response = await api.uploadImage(file, caption, username, userIdRef.current, messageId);
+    if (response.ok) {
+      const data = await response.json() as { success: boolean; messageId: string; imageUrl: string };
+      // Update the message with the permanent URL
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, imageUrl: data.imageUrl, status: "delivered" }
+            : msg
+        )
+      );
       
-      if (response.ok) {
-        const data = await response.json();
-        // Update the message with the permanent URL
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId
-              ? { ...msg, imageUrl: data.imageUrl, status: "delivered" }
-              : msg
-          )
-        );
-        
-        // Also trigger Pusher event for real-time
-        await api.sendMessage({
-          ...imageMessage,
-          id: messageId,
-          imageUrl: data.imageUrl,
-          status: "delivered",
-        });
-      } else {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId ? { ...msg, status: "error" } : msg
-          )
-        );
-      }
-    } catch (err) {
-      console.error("Error uploading image:", err);
+      // Also trigger Pusher event for real-time
+      await api.sendMessage({
+        ...imageMessage,
+        id: messageId,
+        imageUrl: data.imageUrl,
+        status: "delivered",
+      });
+    } else {
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === messageId ? { ...msg, status: "error" } : msg
         )
       );
-    } finally {
-      setIsUploadingImage(false);
-      // Clean up temporary URL
-      URL.revokeObjectURL(tempImageUrl);
     }
-  };
+  } catch (err) {
+    console.error("Error uploading image:", err);
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId ? { ...msg, status: "error" } : msg
+      )
+    );
+  } finally {
+    setIsUploadingImage(false);
+    // Clean up temporary URL
+    URL.revokeObjectURL(tempImageUrl);
+  }
+};
 
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
