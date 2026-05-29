@@ -891,68 +891,97 @@ export default function Home() {
   };
 
   // ── Pusher Real-time ────────────────────────────────────────────────
-  useEffect(() => {
-    if (!isJoined) return;
-    const pusher = new Pusher("bc4bbe143420c20c0e9d", {
-      cluster: "ap1",
-      authEndpoint: "/api/pusher-auth",
-    });
-    const channel = pusher.subscribe("private-chat-channel");
+useEffect(() => {
+  if (!isJoined) return;
+  
+  const pusher = new Pusher("bc4bbe143420c20c0e9d", {
+    cluster: "ap1",
+    authEndpoint: "/api/pusher-auth",
+  });
+  const channel = pusher.subscribe("private-chat-channel");
+  
+  channel.bind("new-message", async (data: any) => {
+    console.log("Received new message via Pusher:", data);
     
-    channel.bind("new-message", async (data: any) => {
-      console.log("Received new message via Pusher:", data);
-      let imageUrl = undefined;
-      let imageThumbnail = undefined;
-      if (data.type === "image" && data.imageId) {
-        const imageData = await fetchImage(data.imageId);
-        if (imageData) {
-          imageUrl = imageData.full;
-          imageThumbnail = imageData.thumbnail;
-        }
+    // Check if message already exists
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === data.id)) return prev;
+      return prev;
+    });
+    
+    // Fetch image data if it's an image message
+    let imageUrl = undefined;
+    let imageThumbnail = undefined;
+    
+    if (data.type === "image" && data.imageId) {
+      console.log("Fetching image for ID:", data.imageId);
+      const imageData = await fetchImage(data.imageId);
+      if (imageData) {
+        imageUrl = imageData.full;
+        imageThumbnail = imageData.thumbnail;
+        console.log("Image fetched successfully");
+      } else {
+        console.log("Failed to fetch image");
       }
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data.id)) return prev;
-        const newMessage: Message = {
-          ...data,
-          status: "delivered" as MessageStatus,
-          imageUrl,
-          imageThumbnail,
-        };
-        const newMessages = [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-        if (isUserScrolled) {
-          setNewMessageCount(prev => prev + 1);
-        } else {
-          setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-          }, 100);
-        }
-        return newMessages;
-      });
-    });
+    }
     
-    channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction | null }) => {
-      if (!data.reaction) return;
-      setMessages((prev) =>
-        prev.map((msg) => {
-          if (msg.id !== data.messageId) return msg;
-          const alreadyExists = msg.reactions?.some(
-            (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
-          );
-          if (alreadyExists) return msg;
-          return {
-            ...msg,
-            reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
-          };
-        })
+    // Add the message with image data
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === data.id)) return prev;
+      
+      const newMessage: Message = {
+        id: data.id,
+        text: data.text,
+        username: data.username,
+        timestamp: data.timestamp,
+        userId: data.userId,
+        type: data.type || "text",
+        imageId: data.imageId,
+        status: "delivered" as MessageStatus,
+        reactions: data.reactions || [],
+        imageUrl: imageUrl,
+        imageThumbnail: imageThumbnail,
+      };
+      
+      const newMessages = [...prev, newMessage].sort(
+        (a, b) => a.timestamp - b.timestamp
       );
+      
+      if (isUserScrolled) {
+        setNewMessageCount(prev => prev + 1);
+      } else {
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
+      
+      return newMessages;
     });
-    
-    return () => {
-      channel.unbind_all();
-      channel.unsubscribe();
-      pusher.disconnect();
-    };
-  }, [isJoined, isUserScrolled]);
+  });
+  
+  channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction | null }) => {
+    if (!data.reaction) return;
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== data.messageId) return msg;
+        const alreadyExists = msg.reactions?.some(
+          (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
+        );
+        if (alreadyExists) return msg;
+        return {
+          ...msg,
+          reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
+        };
+      })
+    );
+  });
+  
+  return () => {
+    channel.unbind_all();
+    channel.unsubscribe();
+    pusher.disconnect();
+  };
+}, [isJoined, isUserScrolled]);
 
   // ── Reactions ───────────────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
