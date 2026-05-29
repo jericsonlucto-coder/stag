@@ -9,7 +9,7 @@
         // ============================================================
         // TYPES & INTERFACES
         // ============================================================
-        type MessageStatus = "sending" | "sent" | "delivered" | "error";
+      type MessageStatus = "sending" | "sent" | "delivered" | "error";
         type ReactionType = "👍" | "❤️" | "😂" | "😮" | "😢" | "🙏";
         
         interface Reaction {
@@ -28,7 +28,7 @@
           status?: MessageStatus;
           reactions?: Reaction[];
           type?: 'text' | 'image';
-          imageBase64?: string; // Use imageBase64, not imageUrl
+          imageBase64?: string;
         }
         
         interface User {
@@ -46,15 +46,14 @@
           createdAt: string;
           reactions?: Reaction[];
           type?: 'text' | 'image';
-          imageUrl?: string;
+          imageBase64?: string; // Add this line
         }
         
         interface SendImageResponse {
           success: boolean;
           message: {
             id: string;
-            imageUrl: string;
-            imageStoragePath: string;
+            imageBase64: string;
             text: string;
             username: string;
             timestamp: number;
