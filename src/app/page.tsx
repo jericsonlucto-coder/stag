@@ -1,6 +1,6 @@
 "use client";
 import NextImage from "next/image";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
 
 // ============================================================
@@ -44,9 +44,9 @@ interface User {
 // ============================================================
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 const REACTIONS: ReactionType[] = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
-const HEARTBEAT_INTERVAL = 15000; // Reduced to 15 seconds for more frequent updates
+const HEARTBEAT_INTERVAL = 15000;
 const USER_ACTIVE_THRESHOLD = 60000;
-const USER_REFRESH_INTERVAL = 5000;
+const USER_REFRESH_INTERVAL = 3000; // Refresh every 3 seconds
 const STATUS_CLEAR_DELAY = 2000;
 const MESSAGES_PER_PAGE = 50;
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
@@ -241,7 +241,6 @@ function JoinScreen({
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4 transition-colors duration-300">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 sm:p-10 max-w-md w-full transition-colors duration-300 relative">
-        {/* Theme Toggle Button */}
         <button
           onClick={toggleTheme}
           className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
@@ -334,7 +333,6 @@ function ChatScreen({
 }: any) {
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden transition-colors duration-300">
-      {/* Header */}
       <div className="bg-white dark:bg-gray-800 shadow-lg border-b border-gray-200 dark:border-gray-700 flex-shrink-0 transition-colors duration-300">
         <div className="px-4 sm:px-6 py-3 flex justify-between items-center w-full lg:max-w-[90%] xl:max-w-[80%] mx-auto">
           <div className="flex items-center gap-3">
@@ -355,7 +353,6 @@ function ChatScreen({
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {/* Theme Toggle Button */}
             <button
               onClick={toggleTheme}
               className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
@@ -388,11 +385,9 @@ function ChatScreen({
         </div>
       </div>
 
-      {/* Main Content Container with Gap and Centering */}
       <div className="flex-1 flex items-center justify-center p-4 overflow-hidden min-h-0">
         <div className="w-full lg:max-w-[90%] xl:max-w-[80%] h-full flex gap-4">
           
-          {/* Online Users Sidebar - Separate Container */}
           <div className={`lg:flex lg:w-72 bg-white dark:bg-gray-800 rounded-2xl shadow-xl flex-shrink-0 flex flex-col overflow-hidden transition-all duration-300 ${
             isMobileMenuOpen ? 'fixed inset-y-0 left-0 z-50 w-72 translate-x-0' : 'hidden lg:flex'
           }`}>
@@ -430,14 +425,11 @@ function ChatScreen({
             </div>
           </div>
 
-          {/* Overlay for mobile sidebar */}
           {isMobileMenuOpen && (
             <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
           )}
 
-          {/* Chat Area - Separate Container */}
           <div className="flex-1 bg-white dark:bg-gray-800 rounded-2xl shadow-xl flex flex-col overflow-hidden transition-colors duration-300">
-            {/* Load More Button */}
             {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
               <div className="sticky top-0 z-10 p-3 flex justify-center bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <button 
@@ -465,7 +457,6 @@ function ChatScreen({
               </div>
             )}
             
-            {/* Scroll to Bottom Button */}
             {showScrollButton && newMessageCount === 0 && (
               <button 
                 onClick={onScrollToBottom} 
@@ -477,7 +468,6 @@ function ChatScreen({
               </button>
             )}
             
-            {/* New Message Count Button */}
             {newMessageCount > 0 && (
               <button 
                 onClick={onScrollToBottom} 
@@ -490,7 +480,6 @@ function ChatScreen({
               </button>
             )}
             
-            {/* Messages Container */}
             <div 
               ref={messagesContainerRef} 
               onScroll={onScroll} 
@@ -533,7 +522,6 @@ function ChatScreen({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Area */}
             <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0 bg-white dark:bg-gray-800 transition-colors duration-300">
               <form onSubmit={onSendMessage} className="space-y-2">
                 <div className="flex gap-2">
@@ -881,16 +869,19 @@ export default function Home() {
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // ── Activity Tracking Function ───────────────────────────────────────
-  const updateUserActivityAndActive = async () => {
+  const updateUserActivityAndActive = useCallback(async () => {
     if (!isJoined) return;
     try {
-      // Update last active timestamp
-      await api.patchUser(userIdRef.current, { lastActive: Date.now() });
-      console.log("User activity updated");
+      const now = Date.now();
+      await api.patchUser(userIdRef.current, { lastActive: now });
+      console.log("User activity updated at:", new Date(now).toLocaleTimeString());
+      
+      // Immediately refresh online users list
+      await loadOnlineUsers();
     } catch (err) {
       console.error("Error updating user activity:", err);
     }
-  };
+  }, [isJoined]);
 
   // ── Load and Combine Messages Function ─────────────────────────────────
   const loadAndCombineMessages = async (limit?: number, beforeTimestamp?: number): Promise<Message[]> => {
@@ -1011,16 +1002,7 @@ export default function Home() {
   };
 
   // ── User Presence Functions ─────────────────────────────────────────
-  const updateLastActive = async () => {
-    if (!isJoined) return;
-    try {
-      await api.patchUser(userIdRef.current, { lastActive: Date.now() });
-    } catch (err) {
-      console.error("Error updating last active:", err);
-    }
-  };
-
-  const loadOnlineUsers = async () => {
+  const loadOnlineUsers = useCallback(async () => {
     try {
       const res = await api.getUsers();
       const data: Record<string, any> = await res.json();
@@ -1035,9 +1017,6 @@ export default function Home() {
             joinedAt: user.joinedAt || now,
             lastActive: user.lastActive,
           });
-        } else {
-          // Don't delete inactive users, just don't show them
-          console.log(`User ${user.username} is inactive`);
         }
       });
       active.sort((a, b) => {
@@ -1046,10 +1025,11 @@ export default function Home() {
         return a.username.localeCompare(b.username);
       });
       setOnlineUsers(active);
+      console.log("Online users updated:", active.length);
     } catch (err) {
       console.error("Error loading online users:", err);
     }
-  };
+  }, []);
 
   // ── Effects for activity tracking ───────────────────────────────────
   useEffect(() => {
@@ -1071,6 +1051,7 @@ export default function Home() {
     if (inputElement) {
       inputElement.addEventListener('focus', handleUserInteraction);
       inputElement.addEventListener('click', handleUserInteraction);
+      inputElement.addEventListener('keydown', handleUserInteraction);
     }
     
     // Initial activity update
@@ -1088,12 +1069,13 @@ export default function Home() {
       if (inputElement) {
         inputElement.removeEventListener('focus', handleUserInteraction);
         inputElement.removeEventListener('click', handleUserInteraction);
+        inputElement.removeEventListener('keydown', handleUserInteraction);
       }
       if (userHeartbeatRef.current) {
         clearInterval(userHeartbeatRef.current);
       }
     };
-  }, [isJoined]);
+  }, [isJoined, updateUserActivityAndActive]);
 
   useEffect(() => {
     const savedUsername = localStorage.getItem("chat-username");
@@ -1162,7 +1144,7 @@ export default function Home() {
       clearInterval(interval);
       removeUser();
     };
-  }, [isJoined]);
+  }, [isJoined, loadOnlineUsers]);
 
   useEffect(() => {
     if (!isUserScrolled && messagesEndRef.current && messages.length > 0 && !isLoadingMore) {
