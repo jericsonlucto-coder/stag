@@ -26,8 +26,9 @@ interface Message {
   status?: MessageStatus;
   reactions?: Reaction[];
   type?: MessageType;
-  imageUrl?: string;
-  imageThumbnail?: string; // Add thumbnail for faster loading
+  imageId?: string; // Reference instead of full data
+  imageUrl?: string; // For local display only
+  imageThumbnail?: string; // For local display only
 }
 
 interface User {
@@ -147,6 +148,16 @@ const processImage = async (file: File): Promise<{ full: string; thumbnail: stri
     img.onerror = reject;
     img.src = URL.createObjectURL(file);
   });
+};
+const fetchImage = async (imageId: string): Promise<{ full: string; thumbnail: string } | null> => {
+  try {
+    const res = await fetch(`${FIREBASE_DB_URL}/images/${imageId}.json`);
+    const data = await res.json();
+    return data;
+  } catch (err) {f
+    console.error("Error fetching image:", err);
+    return null;
+  }
 };
 
 // ============================================================
@@ -701,22 +712,40 @@ export default function Home() {
       
       const res = await api.getMessages(MESSAGES_PER_PAGE);
       const data: Record<string, FirebaseMessage> = await res.json();
+
+      const enrichMessagesWithImages = async (messages: Message[]): Promise<Message[]> => {
+  const enriched = await Promise.all(
+    messages.map(async (msg) => {
+      if (msg.type === "image" && msg.imageId && !msg.imageUrl) {
+        const imageData = await fetchImage(msg.imageId);
+        if (imageData) {
+          return { ...msg, imageUrl: imageData.full, imageThumbnail: imageData.thumbnail };
+        }
+      }
+      return msg;
+    })
+  );
+  return enriched;
+};
       
       const loaded: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
-        .map(([key, msg]) => ({
-          id: key,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered" as MessageStatus,
-          reactions: sanitizeReactions(msg.reactions || []),
-          type: msg.type || "text",
-          imageUrl: msg.imageUrl,
-          imageThumbnail: msg.imageThumbnail,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
+  .filter(([, msg]) => msg?.text && msg?.username)
+  .map(([key, msg]) => ({
+    id: key,
+    text: msg.text,
+    username: msg.username,
+    timestamp: msg.timestamp || Date.now(),
+    userId: msg.userId || "",
+    status: "delivered" as MessageStatus,
+    reactions: sanitizeReactions(msg.reactions || []),
+    type: msg.type || "text",
+    imageId: msg.imageId,
+  }))
+  .sort((a, b) => a.timestamp - b.timestamp);
+
+// Enrich with images
+const enrichedMessages = await enrichMessagesWithImages(loaded);
+setMessages(enrichedMessages);
       
       setMessages(loaded);
       
@@ -817,88 +846,106 @@ export default function Home() {
 
   // ── Image Upload Function ─────────────────────────────────
   const handleImageUpload = async (file: File) => {
-    if (!file) return;
+  if (!file) return;
+  
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    alert("Please upload a valid image (JPEG, PNG, GIF, or WEBP)");
+    return;
+  }
+  
+  if (file.size > MAX_IMAGE_SIZE) {
+    alert("Image must be less than 2MB");
+    return;
+  }
+  
+  setIsUploading(true);
+  updateUserActivity();
+  await updateLastActive();
+  
+  const messageId = generateId();
+  
+  try {
+    // Process image (compress and create thumbnail)
+    const { full, thumbnail } = await processImage(file);
     
-    // Validate file type
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      alert("Please upload a valid image (JPEG, PNG, GIF, or WEBP)");
-      return;
+    // First, upload image to Firebase storage
+    const uploadRes = await fetch("/api/upload-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        imageData: { full, thumbnail },
+        messageId: messageId,
+      }),
+    });
+    
+    if (!uploadRes.ok) {
+      throw new Error("Failed to upload image");
     }
     
-    // Validate file size
-    if (file.size > MAX_IMAGE_SIZE) {
-      alert("Image must be less than 2MB");
-      return;
-    }
+    const newMessage: Message = {
+      id: messageId,
+      text: "📷 Image",
+      username,
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+      type: "image",
+      imageId: messageId, // Store reference
+      // Also store locally for immediate display
+      imageUrl: full,
+      imageThumbnail: thumbnail,
+    };
     
-    setIsUploading(true);
-    updateUserActivity();
-    await updateLastActive();
+    const updateStatus = (status: MessageStatus | undefined) =>
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+      );
     
-    const messageId = generateId();
+    // Add message locally first
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === messageId)) return prev;
+      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+    });
     
+    // Scroll to bottom
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+    
+    // Send message reference via API
     try {
-      // Process image (compress and create thumbnail)
-      const { full, thumbnail } = await processImage(file);
+      updateStatus("sent");
+      const messageToSend = { ...newMessage };
+      delete (messageToSend as any).imageUrl;
+      delete (messageToSend as any).imageThumbnail;
       
-      const newMessage: Message = {
-        id: messageId,
-        text: "📷 Image",
-        username,
-        timestamp: Date.now(),
-        userId: userIdRef.current,
-        status: "sending",
-        reactions: [],
-        type: "image",
-        imageUrl: full,
-        imageThumbnail: thumbnail,
-      };
-      
-      const updateStatus = (status: MessageStatus | undefined) =>
-        setMessages((prev) =>
-          prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
-        );
-      
-      // Add message locally first
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === messageId)) return prev;
-        return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-      });
-      
-      // Scroll to bottom
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
-      
-      // Send to server via API
-      try {
-        updateStatus("sent");
-        const res = await api.sendMessage(newMessage);
-        if (res.ok) {
-          updateStatus("delivered");
-          setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
-        } else {
-          updateStatus("error");
-          console.error("Failed to send image:", await res.text());
-        }
-      } catch (err) {
-        console.error("Error sending image:", err);
+      const res = await api.sendMessage(messageToSend);
+      if (res.ok) {
+        updateStatus("delivered");
+        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+      } else {
         updateStatus("error");
+        console.error("Failed to send image message:", await res.text());
       }
-      
-      setIsUserScrolled(false);
-      setShowScrollButton(false);
-      
     } catch (err) {
-      console.error("Error processing image:", err);
-      alert("Failed to process image. Please try again.");
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      console.error("Error sending image message:", err);
+      updateStatus("error");
     }
-  };
+    
+    setIsUserScrolled(false);
+    setShowScrollButton(false);
+    
+  } catch (err) {
+    console.error("Error processing image:", err);
+    alert("Failed to process image. Please try again.");
+  } finally {
+    setIsUploading(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+};
 
   // ── Send Text Message ─────────────────────────────────────
   const sendMessage = async (e: React.FormEvent) => {
@@ -950,57 +997,82 @@ export default function Home() {
   };
 
   // ── Pusher ────────────────────────────────────────────────
-  useEffect(() => {
-    if (!isJoined) return;
-    const pusher = new Pusher("bc4bbe143420c20c0e9d", {
-      cluster: "ap1",
-      authEndpoint: "/api/pusher-auth",
-    });
-    const channel = pusher.subscribe("private-chat-channel");
-    channel.bind("new-message", (data: Message) => {
-      console.log("Received new message via Pusher:", data);
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data.id)) return prev;
-        const newMessages = [...prev, { ...data, status: "delivered" as MessageStatus }].sort(
-          (a, b) => a.timestamp - b.timestamp
-        );
-        
-        if (isUserScrolled) {
-          setNewMessageCount(prev => prev + 1);
-        } else {
-          setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-          }, 100);
-        }
-        
-        return newMessages;
-      });
-    });
-    channel.bind(
-      "message-reaction",
-      (data: { messageId: string; reaction: Reaction | null }) => {
-        if (!data.reaction) return;
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== data.messageId) return msg;
-            const alreadyExists = msg.reactions?.some(
-              (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
-            );
-            if (alreadyExists) return msg;
-            return {
-              ...msg,
-              reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
-            };
-          })
-        );
+ useEffect(() => {
+  if (!isJoined) return;
+  
+  const pusher = new Pusher("bc4bbe143420c20c0e9d", {
+    cluster: "ap1",
+    authEndpoint: "/api/pusher-auth",
+  });
+  const channel = pusher.subscribe("private-chat-channel");
+  
+  channel.bind("new-message", async (data: any) => {
+    console.log("Received new message via Pusher:", data);
+    
+    // If it's an image message, fetch the actual image data
+    let imageUrl = undefined;
+    let imageThumbnail = undefined;
+    
+    if (data.type === "image" && data.imageId) {
+      const imageData = await fetchImage(data.imageId);
+      if (imageData) {
+        imageUrl = imageData.full;
+        imageThumbnail = imageData.thumbnail;
       }
-    );
-    return () => {
-      channel.unbind_all();
-      channel.unsubscribe();
-      pusher.disconnect();
-    };
-  }, [isJoined, isUserScrolled]);
+    }
+    
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === data.id)) return prev;
+      
+      const newMessage: Message = {
+        ...data,
+        status: "delivered" as MessageStatus,
+        imageUrl,
+        imageThumbnail,
+      };
+      
+      const newMessages = [...prev, newMessage].sort(
+        (a, b) => a.timestamp - b.timestamp
+      );
+      
+      if (isUserScrolled) {
+        setNewMessageCount(prev => prev + 1);
+      } else {
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
+      
+      return newMessages;
+    });
+  });
+  
+  channel.bind(
+    "message-reaction",
+    (data: { messageId: string; reaction: Reaction | null }) => {
+      if (!data.reaction) return;
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== data.messageId) return msg;
+          const alreadyExists = msg.reactions?.some(
+            (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
+          );
+          if (alreadyExists) return msg;
+          return {
+            ...msg,
+            reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
+          };
+        })
+      );
+    }
+  );
+  
+  return () => {
+    channel.unbind_all();
+    channel.unsubscribe();
+    pusher.disconnect();
+  };
+}, [isJoined, isUserScrolled]);
 
   // ── Actions ───────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
