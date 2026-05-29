@@ -38,6 +38,13 @@ interface User {
   lastActive: number;
 }
 
+interface CombinedMessagesResponse {
+  success: boolean;
+  messages: Message[];
+  count: number;
+  error?: string;
+}
+
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -175,6 +182,19 @@ const api = {
   getMessagesBefore: (endBefore: string, limit: number) => {
     return fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${endBefore}"&limitToLast=${limit}`);
   },
+  getCombinedMessages: async (limit?: number, before?: string): Promise<CombinedMessagesResponse> => {
+    try {
+      let url = `/api/get-messages?`;
+      if (limit) url += `limit=${limit}`;
+      if (before) url += `&before=${before}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      return data as CombinedMessagesResponse;
+    } catch (err) {
+      console.error("Error getting combined messages:", err);
+      return { success: false, messages: [], count: 0, error: "Failed to fetch messages" };
+    }
+  },
   getUsers: () => fetch(`${FIREBASE_DB_URL}/users.json`),
   putUser: (userId: string, data: object) =>
     fetch(`${FIREBASE_DB_URL}/users/${userId}.json`, {
@@ -208,14 +228,6 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId, reaction }),
     }),
-   getCombinedMessages: async (limit?: number, before?: string) => {
-    let url = `/api/get-messages?`;
-    if (limit) url += `limit=${limit}`;
-    if (before) url += `&before=${before}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return data;
-  },
 };
 
 // ============================================================
@@ -604,55 +616,50 @@ export default function Home() {
   };
 
   // ── Load More Messages ──────────────────────────────────────────────
-  const loadMoreMessages = async () => {
-    if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
-    setIsLoadingMore(true);
-    try {
-      const oldestMessage = messages[0];
-      if (!oldestMessage) return;
-      const res = await api.getMessagesBefore(oldestMessage.id, MESSAGES_PER_PAGE);
-      const data: Record<string, any> = await res.json();
-      const olderMessages: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
-        .map(([key, msg]) => ({
-          id: key,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered" as MessageStatus,
-          reactions: sanitizeReactions(msg.reactions || []),
-          type: msg.type || "text",
-          imageId: msg.imageId,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
+ const loadMoreMessages = async () => {
+  if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
+  
+  setIsLoadingMore(true);
+  try {
+    const oldestMessage = messages[0];
+    if (!oldestMessage) return;
+    
+    const result = await api.getCombinedMessages(MESSAGES_PER_PAGE, oldestMessage.id);
+    
+    if (result.success && result.messages && result.messages.length > 0) {
+      const olderMessages = result.messages;
       
-      const enrichedOlderMessages = await enrichMessagesWithImages(olderMessages);
-      
-      if (enrichedOlderMessages.length === 0 || enrichedOlderMessages.length < MESSAGES_PER_PAGE) {
+      if (olderMessages.length < MESSAGES_PER_PAGE) {
         setHasMoreMessages(false);
+      } else {
+        // Check if there are even older messages
+        const newOldestMessage = olderMessages[0];
+        const olderCheck = await api.getCombinedMessages(1, newOldestMessage.id);
+        setHasMoreMessages(olderCheck.count > 0);
       }
       
-      if (enrichedOlderMessages.length > 0) {
-        const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
-        const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
-        setMessages(prev => [...enrichedOlderMessages, ...prev]);
-        setTimeout(() => {
-          if (messagesContainerRef.current) {
-            const newScrollHeight = messagesContainerRef.current.scrollHeight;
-            const heightDifference = newScrollHeight - scrollHeightBefore;
-            messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
-          }
-          setShowLoadMoreButton(false);
-        }, 100);
-      }
-    } catch (err) {
-      console.error("Error loading more messages:", err);
-    } finally {
-      setIsLoadingMore(false);
+      const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
+      const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
+      
+      setMessages(prev => [...olderMessages, ...prev]);
+      
+      setTimeout(() => {
+        if (messagesContainerRef.current) {
+          const newScrollHeight = messagesContainerRef.current.scrollHeight;
+          const heightDifference = newScrollHeight - scrollHeightBefore;
+          messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
+        }
+        setShowLoadMoreButton(false);
+      }, 100);
+    } else {
+      setHasMoreMessages(false);
     }
-  };
-
+  } catch (err) {
+    console.error("Error loading more messages:", err);
+  } finally {
+    setIsLoadingMore(false);
+  }
+};
   const checkForOlderMessages = useCallback(async () => {
     if (messages.length === 0) return;
     try {
@@ -666,12 +673,12 @@ export default function Home() {
   }, [messages]);
 
   // ── Load Initial Messages ───────────────────────────────────────────
-  const loadMessages = useCallback(async () => {
+const loadMessages = useCallback(async () => {
   setIsLoading(true);
   try {
     const result = await api.getCombinedMessages(MESSAGES_PER_PAGE);
     
-    if (result.success) {
+    if (result.success && result.messages) {
       setMessages(result.messages);
       setTotalMessages(result.count);
       
@@ -687,9 +694,15 @@ export default function Home() {
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
       }, 100);
+    } else {
+      console.error("Failed to load messages:", result.error);
+      setMessages([]);
+      setHasMoreMessages(false);
     }
   } catch (err) {
     console.error("Error loading messages:", err);
+    setMessages([]);
+    setHasMoreMessages(false);
   } finally {
     setIsLoading(false);
   }
