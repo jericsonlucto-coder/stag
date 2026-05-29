@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface ImageMessageProps {
-  imageUrl: string;
+  imageBase64: string;
   text?: string;
   username: string;
   timestamp: number;
@@ -11,15 +11,8 @@ interface ImageMessageProps {
   onImageClick?: (url: string) => void;
 }
 
-interface FirebaseImageData {
-  data: string;
-  size: number;
-  timestamp: number;
-  contentType?: string;
-}
-
 export default function ImageMessage({ 
-  imageUrl, 
+  imageBase64, 
   text, 
   username, 
   timestamp, 
@@ -28,46 +21,9 @@ export default function ImageMessage({
 }: ImageMessageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
-  const [imageDataUrl, setImageDataUrl] = useState<string>('');
   
   const formatTime = (timestamp: number) => 
     new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  
-  useEffect(() => {
-    // Fetch image from Firebase
-    const fetchImage = async () => {
-      try {
-        console.log("Fetching image from:", imageUrl);
-        const response = await fetch(imageUrl);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data: FirebaseImageData = await response.json();
-        
-        if (data && data.data && typeof data.data === 'string' && data.data.startsWith('data:image/')) {
-          setImageDataUrl(data.data);
-          console.log("Image loaded successfully");
-        } else {
-          console.error("Invalid image data format:", data);
-          setImageError(true);
-        }
-      } catch (error) {
-        console.error('Error loading image:', error);
-        setImageError(true);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    if (imageUrl) {
-      fetchImage();
-    } else {
-      setIsLoading(false);
-      setImageError(true);
-    }
-  }, [imageUrl]);
   
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-2 sm:mb-3`}>
@@ -96,14 +52,15 @@ export default function ImageMessage({
               </div>
             )}
             
-            {!imageError && imageDataUrl && (
+            {!imageError && imageBase64 && (
               <img
-                src={imageDataUrl}
+                src={imageBase64}
                 alt="Shared image"
                 className={`rounded-lg max-w-full max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity`}
-                onClick={() => onImageClick?.(imageDataUrl)}
-                onError={(e) => {
-                  console.error("Image failed to load:", e);
+                onClick={() => onImageClick?.(imageBase64)}
+                onLoad={() => setIsLoading(false)}
+                onError={() => {
+                  console.error("Image failed to load");
                   setImageError(true);
                   setIsLoading(false);
                 }}
