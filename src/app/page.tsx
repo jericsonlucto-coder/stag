@@ -1,5 +1,4 @@
 "use client";
-
 import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
@@ -114,7 +113,9 @@ const api = {
     return fetch(url);
   },
   getMessagesBefore: (endBefore: string, limit: number) => {
-    return fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${endBefore}"&limitToLast=${limit}`);
+    return fetch(
+      `${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${endBefore}"&limitToLast=${limit}`
+    );
   },
   getUsers: () => fetch(`${FIREBASE_DB_URL}/users.json`),
   putUser: (userId: string, data: object) =>
@@ -149,14 +150,19 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId, reaction }),
     }),
-  uploadImage: async (file: File, caption: string, username: string, userId: string, messageId: string) => {
+  uploadImage: async (
+    file: File,
+    caption: string,
+    username: string,
+    userId: string,
+    messageId: string
+  ) => {
     const formData = new FormData();
     formData.append("image", file);
     formData.append("username", username);
     formData.append("userId", userId);
     formData.append("text", caption);
     formData.append("messageId", messageId);
-    
     return fetch("/api/upload-image", {
       method: "POST",
       body: formData,
@@ -195,8 +201,18 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       color: "text-blue-500",
       label: "Sent",
       icon: (
-        <svg className="h-2 w-2 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        <svg
+          className="h-2 w-2 sm:h-3 sm:w-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M5 13l4 4L19 7"
+          />
         </svg>
       ),
     },
@@ -204,8 +220,18 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       color: "text-green-500",
       label: "Delivered",
       icon: (
-        <svg className="h-2 w-2 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <svg
+          className="h-2 w-2 sm:h-3 sm:w-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
         </svg>
       ),
     },
@@ -213,8 +239,18 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       color: "text-red-500",
       label: "Failed",
       icon: (
-        <svg className="h-2 w-2 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <svg
+          className="h-2 w-2 sm:h-3 sm:w-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
         </svg>
       ),
     },
@@ -224,7 +260,9 @@ function StatusIcon({ status }: { status: MessageStatus }) {
     <div className={`flex items-center gap-0.5 text-[8px] sm:text-xs ${color}`}>
       {icon}
       <span className="hidden sm:inline">{label}</span>
-      <span className="sm:hidden">{label === "Sending..." ? "..." : label.charAt(0)}</span>
+      <span className="sm:hidden">
+        {label === "Sending..." ? "..." : label.charAt(0)}
+      </span>
     </div>
   );
 }
@@ -280,11 +318,15 @@ function ReactionDisplay({
           <div
             key={idx}
             className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
-              isActive ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white"
+              isActive
+                ? "border-blue-500 bg-blue-50"
+                : "border-gray-300 bg-white"
             }`}
           >
             <span className="text-[10px] sm:text-sm">{reaction.type}</span>
-            <span className="text-[8px] sm:text-xs text-gray-600">{counts[reaction.type]}</span>
+            <span className="text-[8px] sm:text-xs text-gray-600">
+              {counts[reaction.type]}
+            </span>
           </div>
         );
       })}
@@ -298,6 +340,7 @@ function ImageMessage({
   timestamp,
   text,
   isOwn,
+  status,
   onImageClick,
 }: {
   imageUrl: string;
@@ -305,6 +348,7 @@ function ImageMessage({
   timestamp: number;
   text?: string;
   isOwn: boolean;
+  status?: MessageStatus;
   onImageClick?: (url: string) => void;
 }) {
   const [isLoading, setIsLoading] = useState(true);
@@ -325,16 +369,14 @@ function ImageMessage({
             {formatTime(timestamp)}
           </span>
         </div>
-        
         {text && (
           <p className="break-words whitespace-pre-wrap text-[11px] sm:text-sm mb-2">
             {text}
           </p>
         )}
-        
         <div className="relative">
           {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-200 rounded-lg">
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-200 rounded-lg min-h-[80px]">
               <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-500"></div>
             </div>
           )}
@@ -348,7 +390,7 @@ function ImageMessage({
               src={imageUrl}
               alt="Shared image"
               className={`rounded-lg max-w-full cursor-pointer hover:opacity-90 transition-opacity ${
-                isLoading ? "opacity-0" : "opacity-100"
+                isLoading ? "opacity-0 h-20" : "opacity-100"
               }`}
               onLoad={() => setIsLoading(false)}
               onError={() => {
@@ -360,6 +402,12 @@ function ImageMessage({
             />
           )}
         </div>
+        {/* Status for own image messages */}
+        {isOwn && status && (
+          <div className="mt-0.5 flex justify-end">
+            <StatusIcon status={status} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -383,17 +431,24 @@ function MessageBubble({
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
   const hasReactions = uniqueReactions.length > 0;
-  
+
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} ${hasReactions ? 'mb-6 sm:mb-7' : 'mb-2 sm:mb-3'}`}>
+    <div
+      className={`flex ${isOwn ? "justify-end" : "justify-start"} ${
+        hasReactions ? "mb-6 sm:mb-7" : "mb-2 sm:mb-3"
+      }`}
+    >
       <div
         className="relative max-w-[85%] sm:max-w-[70%] md:max-w-[60%] min-w-[40px]"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        {/* Reaction Picker - Shows on hover at the top of bubble */}
         {isHovered && (
-          <div className={`absolute -top-6 sm:-top-8 ${isOwn ? "right-0" : "left-0"} z-10`}>
+          <div
+            className={`absolute -top-6 sm:-top-8 ${
+              isOwn ? "right-0" : "left-0"
+            } z-10`}
+          >
             <ReactionPicker
               reactions={message.reactions}
               userId={currentUserId}
@@ -401,7 +456,6 @@ function MessageBubble({
             />
           </div>
         )}
-        {/* Bubble with word wrapping and overflow handling */}
         <div
           className={`rounded-lg p-1.5 sm:p-2.5 ${
             isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"
@@ -424,9 +478,12 @@ function MessageBubble({
             </div>
           )}
         </div>
-        {/* Reactions Display - Positioned below bubble */}
         {hasReactions && (
-          <div className={`absolute -bottom-3 ${isOwn ? "right-0" : "left-0"} z-5`}>
+          <div
+            className={`absolute -bottom-3 ${
+              isOwn ? "right-0" : "left-0"
+            } z-5`}
+          >
             <div className="translate-y-2">
               <ReactionDisplay
                 reactions={message.reactions}
@@ -469,10 +526,113 @@ function UserListItem({
         <p className="text-xs sm:text-sm font-medium text-gray-800 truncate">
           {user.username}
           {isCurrentUser && (
-            <span className="ml-1 sm:ml-2 text-[8px] sm:text-xs text-green-600">(You)</span>
+            <span className="ml-1 sm:ml-2 text-[8px] sm:text-xs text-green-600">
+              (You)
+            </span>
           )}
         </p>
         <p className="text-[8px] sm:text-xs text-gray-500">Active now</p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// INLINE IMAGE PREVIEW COMPONENT (shown inside input area)
+// ============================================================
+function InlineImagePreview({
+  preview,
+  caption,
+  onCaptionChange,
+  onSend,
+  onCancel,
+}: {
+  preview: string;
+  caption: string;
+  onCaptionChange: (val: string) => void;
+  onSend: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="border-t bg-gray-50 p-2 sm:p-3 flex-shrink-0">
+      <div className="flex items-start gap-2 sm:gap-3">
+        {/* Image thumbnail */}
+        <div className="relative flex-shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={preview}
+            alt="Preview"
+            className="w-14 h-14 sm:w-20 sm:h-20 object-cover rounded-lg border-2 border-blue-300 shadow"
+          />
+          <button
+            onClick={onCancel}
+            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center hover:bg-red-600 transition-colors shadow"
+            title="Remove image"
+          >
+            <svg
+              className="w-2.5 h-2.5 sm:w-3 sm:h-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={3}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        {/* Caption + send */}
+        <div className="flex-1 flex flex-col gap-1.5 sm:gap-2 min-w-0">
+          <p className="text-[10px] sm:text-xs text-gray-500 font-medium">
+            Image ready to send
+          </p>
+          <input
+            type="text"
+            placeholder="Add a caption (optional)..."
+            value={caption}
+            onChange={(e) => onCaptionChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onSend();
+              }
+              if (e.key === "Escape") onCancel();
+            }}
+            className="w-full px-2 sm:px-3 py-1 sm:py-1.5 border border-gray-300 rounded-lg text-[10px] sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            autoFocus
+          />
+          <div className="flex gap-1.5 sm:gap-2">
+            <button
+              onClick={onSend}
+              className="bg-blue-500 text-white px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-sm hover:bg-blue-600 transition-colors font-medium flex items-center gap-1"
+            >
+              <svg
+                className="w-3 h-3 sm:w-4 sm:h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                />
+              </svg>
+              Send
+            </button>
+            <button
+              onClick={onCancel}
+              className="bg-gray-200 text-gray-700 px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-sm hover:bg-gray-300 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -498,8 +658,15 @@ export default function Home() {
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [pendingImage, setPendingImage] = useState<{ file: File; preview: string; caption: string } | null>(null);
-  
+  const [isSendingImage, setIsSendingImage] = useState(false);
+
+  // pendingImage: stores the file + local preview + caption
+  const [pendingImage, setPendingImage] = useState<{
+    file: File;
+    preview: string;
+    caption: string;
+  } | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -548,39 +715,24 @@ export default function Home() {
     }
   }, []);
 
-  // ── Track user activity ──────────────────────────────────
   const updateUserActivity = useCallback(() => {
     if (!isJoined) return;
-    
-    if (activityTimeoutRef.current) {
-      clearTimeout(activityTimeoutRef.current);
-    }
-    
+    if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current);
     updateLastActive();
-    
     activityTimeoutRef.current = setTimeout(() => {}, 120000);
   }, [isJoined, updateLastActive]);
 
-  // ── Track user events for activity ───────────────────────
   useEffect(() => {
     if (!isJoined) return;
-    
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    const events = ["mousedown", "keydown", "scroll", "touchstart"];
     const handleUserActivity = () => updateUserActivity();
-    
-    events.forEach(event => {
-      window.addEventListener(event, handleUserActivity);
-    });
-    
+    events.forEach((event) => window.addEventListener(event, handleUserActivity));
     updateUserActivity();
-    
     return () => {
-      events.forEach(event => {
-        window.removeEventListener(event, handleUserActivity);
-      });
-      if (activityTimeoutRef.current) {
-        clearTimeout(activityTimeoutRef.current);
-      }
+      events.forEach((event) =>
+        window.removeEventListener(event, handleUserActivity)
+      );
+      if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current);
     };
   }, [isJoined, updateUserActivity]);
 
@@ -598,39 +750,36 @@ export default function Home() {
   // ── Scroll Detection ─────────────────────────────────────
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
-    
-    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const { scrollTop, scrollHeight, clientHeight } =
+      messagesContainerRef.current;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
     const isNearTop = scrollTop < 50;
-    
+
     setIsUserScrolled(!isNearBottom);
     setShowScrollButton(!isNearBottom && scrollHeight > clientHeight);
-    
-    if (isNearBottom && newMessageCount > 0) {
-      setNewMessageCount(0);
-    }
-    
+
+    if (isNearBottom && newMessageCount > 0) setNewMessageCount(0);
+
     if (isNearTop && hasMoreMessages && !isLoadingMore && messages.length > 0) {
       setShowLoadMoreButton(true);
     } else if (!isNearTop) {
       setShowLoadMoreButton(false);
     }
-    
     updateUserActivity();
   };
 
   // ── Load More Messages ───────────────────────────────────
   const loadMoreMessages = async () => {
     if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
-    
     setIsLoadingMore(true);
     try {
       const oldestMessage = messages[0];
       if (!oldestMessage) return;
-      
-      const res = await api.getMessagesBefore(oldestMessage.id, MESSAGES_PER_PAGE);
+      const res = await api.getMessagesBefore(
+        oldestMessage.id,
+        MESSAGES_PER_PAGE
+      );
       const data: Record<string, FirebaseMessage> = await res.json();
-      
       const olderMessages: Message[] = Object.entries(data || {})
         .filter(([, msg]) => (msg?.text || msg?.imageUrl) && msg?.username)
         .map(([key, msg]) => ({
@@ -645,27 +794,28 @@ export default function Home() {
           reactions: sanitizeReactions(msg.reactions || []),
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
-      
-      if (olderMessages.length === 0 || olderMessages.length < MESSAGES_PER_PAGE) {
+
+      if (
+        olderMessages.length === 0 ||
+        olderMessages.length < MESSAGES_PER_PAGE
+      ) {
         setHasMoreMessages(false);
       } else {
         const newTotalCount = messages.length + olderMessages.length;
-        if (newTotalCount >= totalMessages) {
-          setHasMoreMessages(false);
-        }
+        if (newTotalCount >= totalMessages) setHasMoreMessages(false);
       }
-      
+
       if (olderMessages.length > 0) {
-        const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
+        const scrollHeightBefore =
+          messagesContainerRef.current?.scrollHeight || 0;
         const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
-        
-        setMessages(prev => [...olderMessages, ...prev]);
-        
+        setMessages((prev) => [...olderMessages, ...prev]);
         setTimeout(() => {
           if (messagesContainerRef.current) {
             const newScrollHeight = messagesContainerRef.current.scrollHeight;
             const heightDifference = newScrollHeight - scrollHeightBefore;
-            messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
+            messagesContainerRef.current.scrollTop =
+              scrollTopBefore + heightDifference;
           }
           setShowLoadMoreButton(false);
         }, 100);
@@ -677,15 +827,14 @@ export default function Home() {
     }
   };
 
-  // ── Check if there are older messages ────────────────────
   const checkForOlderMessages = useCallback(async () => {
     if (messages.length === 0) return;
-    
     try {
       const oldestMessageId = messages[0].id;
-      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
+      const res = await fetch(
+        `${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`
+      );
       const data = await res.json();
-      
       setHasMoreMessages(Object.keys(data || {}).length > 0);
     } catch (err) {
       console.error("Error checking for older messages:", err);
@@ -698,10 +847,9 @@ export default function Home() {
     try {
       const totalCount = await api.getMessagesCount();
       setTotalMessages(totalCount);
-      
+
       const res = await api.getMessages(MESSAGES_PER_PAGE);
       const data: Record<string, FirebaseMessage> = await res.json();
-      
       const loaded: Message[] = Object.entries(data || {})
         .filter(([, msg]) => (msg?.text || msg?.imageUrl) && msg?.username)
         .map(([key, msg]) => ({
@@ -716,18 +864,20 @@ export default function Home() {
           reactions: sanitizeReactions(msg.reactions || []),
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
-      
+
       setMessages(loaded);
-      
+
       if (loaded.length > 0) {
         const oldestMessageId = loaded[0].id;
-        const olderCheck = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
+        const olderCheck = await fetch(
+          `${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`
+        );
         const olderData = await olderCheck.json();
         setHasMoreMessages(Object.keys(olderData || {}).length > 0);
       } else {
         setHasMoreMessages(false);
       }
-      
+
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
       }, 100);
@@ -794,83 +944,84 @@ export default function Home() {
 
   useEffect(() => {
     if (!isJoined) return;
-    
     const handleInputFocus = () => {
       updateLastActive();
       updateUserActivity();
     };
-    
     const inputElement = document.querySelector('input[type="text"]');
     if (inputElement) {
-      inputElement.addEventListener('focus', handleInputFocus);
-      inputElement.addEventListener('click', handleInputFocus);
+      inputElement.addEventListener("focus", handleInputFocus);
+      inputElement.addEventListener("click", handleInputFocus);
     }
-    
     return () => {
       if (inputElement) {
-        inputElement.removeEventListener('focus', handleInputFocus);
-        inputElement.removeEventListener('click', handleInputFocus);
+        inputElement.removeEventListener("focus", handleInputFocus);
+        inputElement.removeEventListener("click", handleInputFocus);
       }
     };
   }, [isJoined, updateLastActive, updateUserActivity]);
 
-  // ── Handle Image Selection ────────────────────────────────
-  const handleImageSelect = (file: File) => {
-    // Validate file type
+  // ── Image Handling ────────────────────────────────────────
+  const handleImageSelect = useCallback((file: File) => {
     const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!validTypes.includes(file.type)) {
       alert("Please select a valid image file (JPEG, PNG, GIF, or WEBP)");
       return;
     }
-    
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       alert("File too large. Maximum size is 5MB.");
       return;
     }
-    
-    const preview = URL.createObjectURL(file);
-    setPendingImage({ file, preview, caption: "" });
-  };
+    // Revoke previous preview URL if any
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.preview);
+      return { file, preview: URL.createObjectURL(file), caption: "" };
+    });
+  }, []);
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf("image") !== -1) {
-        const file = items[i].getAsFile();
-        if (file) {
-          handleImageSelect(file);
-          e.preventDefault();
-          break;
+  // Paste handler — intercepts image pastes in the text input
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleImageSelect(file);
+            break;
+          }
         }
       }
-    }
-  };
+    },
+    [handleImageSelect]
+  );
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      handleImageSelect(file);
-    }
+    if (file) handleImageSelect(file);
+    // Reset input so same file can be re-selected
+    e.target.value = "";
   };
 
-  const cancelImageUpload = () => {
-    if (pendingImage) {
-      URL.revokeObjectURL(pendingImage.preview);
-      setPendingImage(null);
-    }
-  };
+  const cancelImageUpload = useCallback(() => {
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.preview);
+      return null;
+    });
+  }, []);
 
-  const sendImageMessage = async () => {
-    if (!pendingImage) return;
-    
+  const sendImageMessage = useCallback(async () => {
+    if (!pendingImage || isSendingImage) return;
+    setIsSendingImage(true);
     updateUserActivity();
     await updateLastActive();
-    
+
     const messageId = generateId();
-    const imageMessage: Message = {
+
+    // Optimistic message with local blob preview
+    const optimisticMessage: Message = {
       id: messageId,
       imageUrl: pendingImage.preview,
       type: "image",
@@ -881,14 +1032,36 @@ export default function Home() {
       status: "sending",
       reactions: [],
     };
-    
-    setMessages((prev) => [...prev, imageMessage].sort((a, b) => a.timestamp - b.timestamp));
-    
+
+    setMessages((prev) =>
+      [...prev, optimisticMessage].sort((a, b) => a.timestamp - b.timestamp)
+    );
+
+    // Clear pending immediately so UI feels snappy
+    cancelImageUpload();
+    setIsUserScrolled(false);
+    setShowScrollButton(false);
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+
     try {
-      const response = await api.uploadImage(pendingImage.file, pendingImage.caption, username, userIdRef.current, messageId);
-      
+      const response = await api.uploadImage(
+        pendingImage.file,
+        pendingImage.caption,
+        username,
+        userIdRef.current,
+        messageId
+      );
+
       if (response.ok) {
-        const data = await response.json() as { success: boolean; messageId: string; imageUrl: string };
+        const data = (await response.json()) as {
+          success: boolean;
+          messageId: string;
+          imageUrl: string;
+        };
+
+        // Replace blob URL with real CDN URL
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === messageId
@@ -896,12 +1069,18 @@ export default function Home() {
               : msg
           )
         );
-        
+
+        // Broadcast via Pusher so other users see it
         await api.sendMessage({
-          ...imageMessage,
           id: messageId,
           imageUrl: data.imageUrl,
+          type: "image",
+          text: optimisticMessage.text,
+          username,
+          timestamp: optimisticMessage.timestamp,
+          userId: userIdRef.current,
           status: "delivered",
+          reactions: [],
         });
       } else {
         setMessages((prev) =>
@@ -918,14 +1097,16 @@ export default function Home() {
         )
       );
     } finally {
-      cancelImageUpload();
-      setIsUserScrolled(false);
-      setShowScrollButton(false);
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
+      setIsSendingImage(false);
     }
-  };
+  }, [
+    pendingImage,
+    isSendingImage,
+    username,
+    updateUserActivity,
+    updateLastActive,
+    cancelImageUpload,
+  ]);
 
   // ── Pusher ────────────────────────────────────────────────
   useEffect(() => {
@@ -935,20 +1116,35 @@ export default function Home() {
       authEndpoint: "/api/pusher-auth",
     });
     const channel = pusher.subscribe("private-chat-channel");
+
     channel.bind("new-message", (data: Message) => {
       setMessages((prev) => {
-        if (prev.some((m) => m.id === data.id)) return prev;
-        const newMessages = [...prev, { ...data, status: "delivered" as MessageStatus }].sort(
-          (a, b) => a.timestamp - b.timestamp
-        );
-        
-        if (isUserScrolled) {
-          setNewMessageCount(prev => prev + 1);
+        // Skip if we already have this message (own optimistic message)
+        if (prev.some((m) => m.id === data.id)) {
+          // But update the imageUrl if it changed (blob → CDN)
+          return prev.map((m) =>
+            m.id === data.id && data.imageUrl && m.imageUrl !== data.imageUrl
+              ? { ...m, imageUrl: data.imageUrl, status: "delivered" }
+              : m
+          );
         }
-        
+        const newMessages = [
+          ...prev,
+          {
+            ...data,
+            type: data.type || (data.imageUrl ? "image" : "text"),
+            status: "delivered" as MessageStatus,
+            reactions: sanitizeReactions(data.reactions),
+          },
+        ].sort((a, b) => a.timestamp - b.timestamp);
+
+        if (isUserScrolled) {
+          setNewMessageCount((c) => c + 1);
+        }
         return newMessages;
       });
     });
+
     channel.bind(
       "message-reaction",
       (data: { messageId: string; reaction: Reaction | null }) => {
@@ -957,17 +1153,23 @@ export default function Home() {
           prev.map((msg) => {
             if (msg.id !== data.messageId) return msg;
             const alreadyExists = msg.reactions?.some(
-              (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
+              (r) =>
+                r?.userId === data.reaction!.userId &&
+                r?.type === data.reaction!.type
             );
             if (alreadyExists) return msg;
             return {
               ...msg,
-              reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
+              reactions: [
+                ...sanitizeReactions(msg.reactions),
+                data.reaction!,
+              ],
             };
           })
         );
       }
     );
+
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
@@ -996,11 +1198,13 @@ export default function Home() {
             timestamp: Date.now(),
           },
         ];
+
     setMessages((prev) =>
       prev.map((msg) =>
         msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg
       )
     );
+
     try {
       await api.putReactions(messageId, updatedReactions);
       await api.sendReaction(
@@ -1023,11 +1227,15 @@ export default function Home() {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    // If there's a pending image, send that instead
+    if (pendingImage) {
+      await sendImageMessage();
+      return;
+    }
     if (!inputMessage.trim() || !username) return;
-    
     updateUserActivity();
     await updateLastActive();
-    
+
     const messageId = generateId();
     const newMessage: Message = {
       id: messageId,
@@ -1039,15 +1247,19 @@ export default function Home() {
       reactions: [],
       type: "text",
     };
+
     setInputMessage("");
+
     const updateStatus = (status: MessageStatus | undefined) =>
       setMessages((prev) =>
         prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
       );
+
     setMessages((prev) => {
       if (prev.some((m) => m.id === messageId)) return prev;
       return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
     });
+
     try {
       updateStatus("sent");
       const res = await api.sendMessage(newMessage);
@@ -1061,7 +1273,7 @@ export default function Home() {
       console.error("Error sending message:", err);
       updateStatus("error");
     }
-    
+
     setIsUserScrolled(false);
     setShowScrollButton(false);
     setTimeout(() => {
@@ -1084,7 +1296,6 @@ export default function Home() {
     window.location.reload();
   };
 
-  // ── Hover Handlers ────────────────────────────────────────
   const handleMouseEnter = (messageId: string) => {
     clearTimeout(hoverTimeoutRef.current);
     setHoveredMessageId(messageId);
@@ -1092,7 +1303,10 @@ export default function Home() {
   };
 
   const handleMouseLeave = () => {
-    hoverTimeoutRef.current = setTimeout(() => setHoveredMessageId(null), 200);
+    hoverTimeoutRef.current = setTimeout(
+      () => setHoveredMessageId(null),
+      200
+    );
   };
 
   // ── Join Screen ───────────────────────────────────────────
@@ -1150,7 +1364,13 @@ export default function Home() {
       <div className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="px-3 sm:px-4 py-2 sm:py-3 flex justify-between items-center w-full lg:max-w-[70%] lg:mx-auto">
           <div className="flex items-center gap-2 sm:gap-3">
-            <Image src="/next.svg" alt="Logo" width={40} height={10} className="sm:w-[60px]" />
+            <Image
+              src="/next.svg"
+              alt="Logo"
+              width={40}
+              height={10}
+              className="sm:w-[60px]"
+            />
             <h1 className="text-sm sm:text-lg font-semibold text-gray-800">
               Chat with Images
             </h1>
@@ -1160,14 +1380,25 @@ export default function Home() {
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <svg className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              <svg
+                className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
               </svg>
             </button>
-            
             <div className="hidden sm:flex items-center gap-3">
               <span className="text-sm text-gray-600">Logged in as:</span>
-              <span className="font-medium text-gray-800 truncate max-w-[150px]">{username}</span>
+              <span className="font-medium text-gray-800 truncate max-w-[150px]">
+                {username}
+              </span>
               <button
                 onClick={clearSavedUser}
                 className="text-sm text-red-500 hover:text-red-600"
@@ -1175,9 +1406,10 @@ export default function Home() {
                 Leave
               </button>
             </div>
-            
             <div className="sm:hidden flex items-center gap-1">
-              <span className="text-xs font-medium text-gray-800 truncate max-w-[100px]">{username}</span>
+              <span className="text-xs font-medium text-gray-800 truncate max-w-[100px]">
+                {username}
+              </span>
             </div>
           </div>
         </div>
@@ -1201,8 +1433,18 @@ export default function Home() {
                 <div className="p-2 sm:p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600 sticky top-0">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <svg className="h-3 w-3 sm:h-4 sm:w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      <svg
+                        className="h-3 w-3 sm:h-4 sm:w-4 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                        />
                       </svg>
                       <h3 className="font-semibold text-white text-[10px] sm:text-sm">
                         Active ({onlineUsers.length})
@@ -1212,15 +1454,27 @@ export default function Home() {
                       onClick={() => setIsMobileMenuOpen(false)}
                       className="lg:hidden text-white hover:text-gray-200"
                     >
-                      <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <svg
+                        className="h-4 w-4 sm:h-5 sm:w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </button>
                   </div>
                 </div>
                 <div>
                   {onlineUsers.length === 0 ? (
-                    <p className="text-center text-gray-500 py-8 text-[10px] sm:text-sm">No active users</p>
+                    <p className="text-center text-gray-500 py-8 text-[10px] sm:text-sm">
+                      No active users
+                    </p>
                   ) : (
                     onlineUsers.map((user) => (
                       <UserListItem
@@ -1244,98 +1498,117 @@ export default function Home() {
               {/* Chat Area */}
               <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden">
                 {/* Load More Button */}
-                {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
-                  <div className="sticky top-0 z-10 p-1 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b flex-shrink-0">
-                    <button
-                      onClick={loadMoreMessages}
-                      disabled={isLoadingMore}
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-[10px] sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 shadow-md"
-                    >
-                      {isLoadingMore ? (
-                        <>
-                          <svg className="animate-spin h-2 w-2 sm:h-4 sm:w-4" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          <span className="hidden sm:inline">Loading older messages...</span>
-                          <span className="sm:hidden">Loading...</span>
-                        </>
-                      ) : (
-                        <>
-                          <svg className="h-2 w-2 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                          <span className="hidden sm:inline">Load older messages</span>
-                          <span className="sm:hidden">Load more</span>
-                          {totalMessages > messages.length && (
-                            <span className="text-[8px] sm:text-xs text-gray-500">
-                              ({totalMessages - messages.length})
+                {showLoadMoreButton &&
+                  hasMoreMessages &&
+                  !isLoading &&
+                  messages.length > 0 && (
+                    <div className="sticky top-0 z-10 p-1 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b flex-shrink-0">
+                      <button
+                        onClick={loadMoreMessages}
+                        disabled={isLoadingMore}
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-[10px] sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 shadow-md"
+                      >
+                        {isLoadingMore ? (
+                          <>
+                            <svg
+                              className="animate-spin h-2 w-2 sm:h-4 sm:w-4"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                                fill="none"
+                              />
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              />
+                            </svg>
+                            <span className="hidden sm:inline">
+                              Loading older messages...
                             </span>
-                          )}
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-                
-                {/* New Message Button */}
+                            <span className="sm:hidden">Loading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg
+                              className="h-2 w-2 sm:h-4 sm:w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                            <span className="hidden sm:inline">
+                              Load older messages
+                            </span>
+                            <span className="sm:hidden">Load more</span>
+                            {totalMessages > messages.length && (
+                              <span className="text-[8px] sm:text-xs text-gray-500">
+                                ({totalMessages - messages.length})
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                {/* Scroll to bottom / new messages button */}
                 {showScrollButton && newMessageCount === 0 && (
                   <button
                     onClick={scrollToBottom}
                     className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full p-1 sm:p-2 shadow-lg hover:bg-blue-600 transition-colors z-10"
                   >
-                    <svg className="h-3 w-3 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    <svg
+                      className="h-3 w-3 sm:h-5 sm:w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                      />
                     </svg>
                   </button>
                 )}
-                
                 {newMessageCount > 0 && (
                   <button
                     onClick={scrollToBottom}
                     className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full px-2 sm:px-4 py-1 sm:py-2 shadow-lg hover:bg-blue-600 transition-colors z-10 text-[10px] sm:text-sm flex items-center gap-1 sm:gap-2"
                   >
-                    <svg className="h-2 w-2 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    <svg
+                      className="h-2 w-2 sm:h-4 sm:w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                      />
                     </svg>
-                    {newMessageCount}
+                    {newMessageCount} new
                   </button>
                 )}
-                
-                {/* Image Preview Pending */}
-                {pendingImage && (
-                  <div className="absolute bottom-20 left-2 right-2 sm:left-4 sm:right-4 z-20 bg-white rounded-lg shadow-lg border p-3">
-                    <div className="flex gap-3">
-                      <img src={pendingImage.preview} alt="Preview" className="w-16 h-16 object-cover rounded" />
-                      <div className="flex-1">
-                        <input
-                          type="text"
-                          placeholder="Add a caption..."
-                          value={pendingImage.caption}
-                          onChange={(e) => setPendingImage({ ...pendingImage, caption: e.target.value })}
-                          className="w-full px-2 py-1 border rounded text-sm mb-2"
-                          autoFocus
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={sendImageMessage}
-                            className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
-                          >
-                            Send
-                          </button>
-                          <button
-                            onClick={cancelImageUpload}
-                            className="bg-gray-300 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-400"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                <div 
+
+                {/* Messages List */}
+                <div
                   ref={messagesContainerRef}
                   onScroll={handleScroll}
                   className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3 min-h-0"
@@ -1359,6 +1632,7 @@ export default function Home() {
                           timestamp={message.timestamp}
                           text={message.text}
                           isOwn={message.userId === userIdRef.current}
+                          status={message.status}
                           onImageClick={(url) => setSelectedImage(url)}
                         />
                       ) : (
@@ -1376,10 +1650,26 @@ export default function Home() {
                   <div ref={messagesEndRef} />
                 </div>
 
+                {/* ── Inline Image Preview (shown above input) ── */}
+                {pendingImage && (
+                  <InlineImagePreview
+                    preview={pendingImage.preview}
+                    caption={pendingImage.caption}
+                    onCaptionChange={(val) =>
+                      setPendingImage((prev) =>
+                        prev ? { ...prev, caption: val } : null
+                      )
+                    }
+                    onSend={sendImageMessage}
+                    onCancel={cancelImageUpload}
+                  />
+                )}
+
                 {/* Input Area */}
                 <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
                   <form onSubmit={sendMessage}>
                     <div className="flex gap-1 sm:gap-2">
+                      {/* Hidden file input — opens folder picker directly */}
                       <input
                         type="file"
                         ref={fileInputRef}
@@ -1387,16 +1677,29 @@ export default function Home() {
                         onChange={handleFileUpload}
                         className="hidden"
                       />
+                      {/* Image upload button */}
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors"
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0"
                         title="Upload image"
                       >
-                        <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        <svg
+                          className="h-4 w-4 sm:h-5 sm:w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                          />
                         </svg>
                       </button>
+
+                      {/* Text input — also handles paste */}
                       <input
                         type="text"
                         value={inputMessage}
@@ -1404,15 +1707,24 @@ export default function Home() {
                         onPaste={handlePaste}
                         onFocus={updateUserActivity}
                         onClick={updateUserActivity}
-                        placeholder="Type a message or paste an image..."
-                        className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0"
+                        placeholder={
+                          pendingImage
+                            ? "Image ready — press Send or add a caption above"
+                            : "Type a message or paste an image..."
+                        }
+                        disabled={!!pendingImage}
+                        className={`flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0 ${
+                          pendingImage ? "bg-gray-50 text-gray-400 cursor-not-allowed" : ""
+                        }`}
                         maxLength={500}
                       />
+
                       <button
                         type="submit"
-                        className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0"
+                        disabled={isSendingImage}
+                        className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Send
+                        {isSendingImage ? "..." : "Send"}
                       </button>
                     </div>
                   </form>
