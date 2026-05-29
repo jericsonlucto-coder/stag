@@ -490,6 +490,7 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -844,6 +845,24 @@ export default function Home() {
     }
   };
 
+  // ── Handle Paste Event ──────────────────────────────────────────────
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      
+      if (item.type.indexOf("image") !== -1) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await handleImageUpload(file);
+        }
+        break;
+      }
+    }
+  }, []);
+
   // ── Send Text Message ───────────────────────────────────────────────
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -891,97 +910,97 @@ export default function Home() {
   };
 
   // ── Pusher Real-time ────────────────────────────────────────────────
-useEffect(() => {
-  if (!isJoined) return;
-  
-  const pusher = new Pusher("bc4bbe143420c20c0e9d", {
-    cluster: "ap1",
-    authEndpoint: "/api/pusher-auth",
-  });
-  const channel = pusher.subscribe("private-chat-channel");
-  
-  channel.bind("new-message", async (data: any) => {
-    console.log("Received new message via Pusher:", data);
+  useEffect(() => {
+    if (!isJoined) return;
     
-    // Check if message already exists
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === data.id)) return prev;
-      return prev;
+    const pusher = new Pusher("bc4bbe143420c20c0e9d", {
+      cluster: "ap1",
+      authEndpoint: "/api/pusher-auth",
     });
+    const channel = pusher.subscribe("private-chat-channel");
     
-    // Fetch image data if it's an image message
-    let imageUrl = undefined;
-    let imageThumbnail = undefined;
-    
-    if (data.type === "image" && data.imageId) {
-      console.log("Fetching image for ID:", data.imageId);
-      const imageData = await fetchImage(data.imageId);
-      if (imageData) {
-        imageUrl = imageData.full;
-        imageThumbnail = imageData.thumbnail;
-        console.log("Image fetched successfully");
-      } else {
-        console.log("Failed to fetch image");
-      }
-    }
-    
-    // Add the message with image data
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === data.id)) return prev;
+    channel.bind("new-message", async (data: any) => {
+      console.log("Received new message via Pusher:", data);
       
-      const newMessage: Message = {
-        id: data.id,
-        text: data.text,
-        username: data.username,
-        timestamp: data.timestamp,
-        userId: data.userId,
-        type: data.type || "text",
-        imageId: data.imageId,
-        status: "delivered" as MessageStatus,
-        reactions: data.reactions || [],
-        imageUrl: imageUrl,
-        imageThumbnail: imageThumbnail,
-      };
+      // Check if message already exists
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.id)) return prev;
+        return prev;
+      });
       
-      const newMessages = [...prev, newMessage].sort(
-        (a, b) => a.timestamp - b.timestamp
-      );
+      // Fetch image data if it's an image message
+      let imageUrl = undefined;
+      let imageThumbnail = undefined;
       
-      if (isUserScrolled) {
-        setNewMessageCount(prev => prev + 1);
-      } else {
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 100);
+      if (data.type === "image" && data.imageId) {
+        console.log("Fetching image for ID:", data.imageId);
+        const imageData = await fetchImage(data.imageId);
+        if (imageData) {
+          imageUrl = imageData.full;
+          imageThumbnail = imageData.thumbnail;
+          console.log("Image fetched successfully");
+        } else {
+          console.log("Failed to fetch image");
+        }
       }
       
-      return newMessages;
-    });
-  });
-  
-  channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction | null }) => {
-    if (!data.reaction) return;
-    setMessages((prev) =>
-      prev.map((msg) => {
-        if (msg.id !== data.messageId) return msg;
-        const alreadyExists = msg.reactions?.some(
-          (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
-        );
-        if (alreadyExists) return msg;
-        return {
-          ...msg,
-          reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
+      // Add the message with image data
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.id)) return prev;
+        
+        const newMessage: Message = {
+          id: data.id,
+          text: data.text,
+          username: data.username,
+          timestamp: data.timestamp,
+          userId: data.userId,
+          type: data.type || "text",
+          imageId: data.imageId,
+          status: "delivered" as MessageStatus,
+          reactions: data.reactions || [],
+          imageUrl: imageUrl,
+          imageThumbnail: imageThumbnail,
         };
-      })
-    );
-  });
-  
-  return () => {
-    channel.unbind_all();
-    channel.unsubscribe();
-    pusher.disconnect();
-  };
-}, [isJoined, isUserScrolled]);
+        
+        const newMessages = [...prev, newMessage].sort(
+          (a, b) => a.timestamp - b.timestamp
+        );
+        
+        if (isUserScrolled) {
+          setNewMessageCount(prev => prev + 1);
+        } else {
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }, 100);
+        }
+        
+        return newMessages;
+      });
+    });
+    
+    channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction | null }) => {
+      if (!data.reaction) return;
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== data.messageId) return msg;
+          const alreadyExists = msg.reactions?.some(
+            (r) => r?.userId === data.reaction!.userId && r?.type === data.reaction!.type
+          );
+          if (alreadyExists) return msg;
+          return {
+            ...msg,
+            reactions: [...sanitizeReactions(msg.reactions), data.reaction!],
+          };
+        })
+      );
+    });
+    
+    return () => {
+      channel.unbind_all();
+      channel.unsubscribe();
+      pusher.disconnect();
+    };
+  }, [isJoined, isUserScrolled]);
 
   // ── Reactions ───────────────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
@@ -1188,7 +1207,11 @@ useEffect(() => {
                   </button>
                 )}
                 
-                <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3 min-h-0">
+                <div 
+                  ref={messagesContainerRef} 
+                  onScroll={handleScroll} 
+                  className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3 min-h-0"
+                >
                   {isLoading && <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">Loading messages...</p>}
                   {!isLoading && messages.length === 0 && <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">No messages yet. Start the conversation!</p>}
                   {messages.map((message) => (
@@ -1209,7 +1232,7 @@ useEffect(() => {
                 <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
                   <form onSubmit={sendMessage} className="space-y-2">
                     <div className="flex gap-1 sm:gap-2">
-                      <button type="button" onClick={handleImageButtonClick} disabled={isUploading} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" title="Send image (max 2MB)">
+                      <button type="button" onClick={handleImageButtonClick} disabled={isUploading} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" title="Send image (max 2MB) - You can also paste images">
                         {isUploading ? (
                           <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -1222,10 +1245,23 @@ useEffect(() => {
                         )}
                       </button>
                       <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={handleFileSelect} className="hidden" />
-                      <input type="text" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} onFocus={updateUserActivity} onClick={updateUserActivity} placeholder="Type a message..." className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0" maxLength={500} />
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={inputMessage}
+                        onChange={(e) => setInputMessage(e.target.value)}
+                        onFocus={updateUserActivity}
+                        onClick={updateUserActivity}
+                        onPaste={handlePaste}
+                        placeholder="Type a message or paste an image..."
+                        className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0"
+                        maxLength={500}
+                      />
                       <button type="submit" className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0">Send</button>
                     </div>
-                    <div className="text-[8px] sm:text-xs text-gray-500 px-1">📷 Click the camera icon to share images (max 2MB, JPEG/PNG/GIF/WEBP)</div>
+                    <div className="text-[8px] sm:text-xs text-gray-500 px-1">
+                      📷 Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB, JPEG/PNG/GIF/WEBP)
+                    </div>
                   </form>
                 </div>
               </div>
