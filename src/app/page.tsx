@@ -9,6 +9,7 @@ import Pusher from "pusher-js";
 type MessageStatus = "sending" | "sent" | "delivered" | "error";
 type ReactionType = "👍" | "❤️" | "😂" | "😮" | "😢" | "🙏";
 type MessageType = "text" | "image";
+type Theme = "light" | "dark";
 
 interface Reaction {
   type: ReactionType;
@@ -198,37 +199,82 @@ const api = {
 };
 
 // ============================================================
+// THEME CONTEXT
+// ============================================================
+function useTheme() {
+  const [theme, setTheme] = useState<Theme>("light");
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme") as Theme | null;
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const initialTheme = savedTheme || (prefersDark ? "dark" : "light");
+    setTheme(initialTheme);
+    document.documentElement.classList.toggle("dark", initialTheme === "dark");
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = theme === "light" ? "dark" : "light";
+    setTheme(newTheme);
+    localStorage.setItem("theme", newTheme);
+    document.documentElement.classList.toggle("dark", newTheme === "dark");
+  };
+
+  return { theme, toggleTheme };
+}
+
+// ============================================================
 // JOIN SCREEN COMPONENT
 // ============================================================
 function JoinScreen({ 
   username, 
   onUsernameChange, 
-  onSubmit 
+  onSubmit,
+  theme,
+  toggleTheme
 }: { 
   username: string; 
   onUsernameChange: (value: string) => void; 
   onSubmit: (e: React.FormEvent) => void;
+  theme: Theme;
+  toggleTheme: () => void;
 }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 sm:p-10 max-w-md w-full">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4 transition-colors duration-300">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 sm:p-10 max-w-md w-full transition-colors duration-300">
+        {/* Theme Toggle Button */}
+        <button
+          onClick={toggleTheme}
+          className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          aria-label="Toggle theme"
+        >
+          {theme === "light" ? (
+            <svg className="w-5 h-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          )}
+        </button>
+
         <div className="text-center mb-8">
           <div className="w-20 h-20 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
             <NextImage src="/next.svg" alt="Logo" width={50} height={50} className="brightness-0 invert" />
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
             Welcome to Chatto
           </h2>
-          <p className="text-gray-500 mt-2 text-sm">Connect with friends in real-time</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">Connect with friends in real-time</p>
         </div>
         <form onSubmit={onSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Username</label>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Username</label>
             <input
               type="text"
               value={username}
               onChange={(e) => onUsernameChange(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm sm:text-base bg-white"
+              className="w-full px-4 py-3 border-2 border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm sm:text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               placeholder="Enter your username"
               required
               maxLength={20}
@@ -283,18 +329,20 @@ function ChatScreen({
   onPaste,
   onScroll,
   updateUserActivity,
+  theme,
+  toggleTheme,
 }: any) {
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-100 overflow-hidden">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden transition-colors duration-300">
       {/* Header */}
-      <div className="bg-white shadow-lg border-b border-gray-200 flex-shrink-0">
+      <div className="bg-white dark:bg-gray-800 shadow-lg border-b border-gray-200 dark:border-gray-700 flex-shrink-0 transition-colors duration-300">
         <div className="px-4 sm:px-6 py-3 flex justify-between items-center w-full lg:max-w-[90%] xl:max-w-[80%] mx-auto">
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
-              className="lg:hidden p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors"
             >
-              <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-5 w-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
@@ -302,15 +350,32 @@ function ChatScreen({
               <NextImage src="/next.svg" alt="Logo" width={24} height={6} className="brightness-0 invert" />
             </div>
             <div>
-              <h1 className="text-lg sm:text-xl font-bold text-gray-800">Chatto</h1>
-              <p className="text-xs text-gray-500 hidden sm:block">Real-time messaging</p>
+              <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white">Chatto</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">Real-time messaging</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {/* Theme Toggle Button */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              aria-label="Toggle theme"
+            >
+              {theme === "light" ? (
+                <svg className="w-5 h-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              )}
+            </button>
+            
             <div className="hidden sm:flex items-center gap-4">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-full">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-sm text-gray-600">{username}</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300">{username}</span>
               </div>
               <button 
                 onClick={onClearSavedUser} 
@@ -328,7 +393,7 @@ function ChatScreen({
         <div className="w-full lg:max-w-[90%] xl:max-w-[80%] h-full flex gap-4">
           
           {/* Online Users Sidebar - Separate Container */}
-          <div className={`lg:flex lg:w-72 bg-white rounded-2xl shadow-xl flex-shrink-0 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+          <div className={`lg:flex lg:w-72 bg-white dark:bg-gray-800 rounded-2xl shadow-xl flex-shrink-0 flex flex-col overflow-hidden transition-all duration-300 ${
             isMobileMenuOpen ? 'fixed inset-y-0 left-0 z-50 w-72 translate-x-0' : 'hidden lg:flex'
           }`}>
             <div className="p-4 bg-gradient-to-r from-blue-500 to-indigo-600">
@@ -351,8 +416,8 @@ function ChatScreen({
             </div>
             <div className="flex-1 overflow-y-auto">
               {onlineUsers.length === 0 ? (
-                <div className="text-center text-gray-500 py-12">
-                  <svg className="h-12 w-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="text-center text-gray-500 dark:text-gray-400 py-12">
+                  <svg className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                   <p className="text-sm">No active users</p>
@@ -370,15 +435,15 @@ function ChatScreen({
             <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
           )}
 
-          {/* Chat Area - Separate Container with Gap */}
-          <div className="flex-1 bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden">
+          {/* Chat Area - Separate Container */}
+          <div className="flex-1 bg-white dark:bg-gray-800 rounded-2xl shadow-xl flex flex-col overflow-hidden transition-colors duration-300">
             {/* Load More Button */}
             {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
-              <div className="sticky top-0 z-10 p-3 flex justify-center bg-white/95 backdrop-blur-sm border-b border-gray-200 flex-shrink-0">
+              <div className="sticky top-0 z-10 p-3 flex justify-center bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <button 
                   onClick={onLoadMoreMessages} 
                   disabled={isLoadingMore} 
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm transition-all flex items-center gap-2 shadow-md"
+                  className="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-xl text-sm transition-all flex items-center gap-2 shadow-md"
                 >
                   {isLoadingMore ? (
                     <>
@@ -438,18 +503,18 @@ function ChatScreen({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    <p className="text-gray-500">Loading messages...</p>
+                    <p className="text-gray-500 dark:text-gray-400">Loading messages...</p>
                   </div>
                 </div>
               )}
               {!isLoading && messages.length === 0 && (
                 <div className="flex justify-center items-center h-full">
                   <div className="text-center">
-                    <svg className="h-16 w-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                     </svg>
-                    <p className="text-gray-500 text-lg">No messages yet</p>
-                    <p className="text-gray-400 text-sm">Start the conversation!</p>
+                    <p className="text-gray-500 dark:text-gray-400 text-lg">No messages yet</p>
+                    <p className="text-gray-400 dark:text-gray-500 text-sm">Start the conversation!</p>
                   </div>
                 </div>
               )}
@@ -469,14 +534,14 @@ function ChatScreen({
             </div>
 
             {/* Input Area */}
-            <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white">
+            <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0 bg-white dark:bg-gray-800 transition-colors duration-300">
               <form onSubmit={onSendMessage} className="space-y-2">
                 <div className="flex gap-2">
                   <button 
                     type="button" 
                     onClick={onImageUpload} 
                     disabled={isUploading} 
-                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 px-3 py-2 rounded-xl transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Send image (max 2MB) - You can also paste images"
                   >
                     {isUploading ? (
@@ -506,7 +571,7 @@ function ChatScreen({
                     onClick={updateUserActivity}
                     onPaste={onPaste}
                     placeholder="Type a message or paste an image..."
-                    className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all bg-white"
+                    className="flex-1 px-4 py-2 border-2 border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     maxLength={500}
                   />
                   <button 
@@ -516,7 +581,7 @@ function ChatScreen({
                     Send
                   </button>
                 </div>
-                <div className="text-xs text-gray-400 px-1 flex items-center gap-1">
+                <div className="text-xs text-gray-400 dark:text-gray-500 px-1 flex items-center gap-1">
                   <span>📷</span>
                   <span>Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB)</span>
                 </div>
@@ -535,7 +600,7 @@ function ChatScreen({
 function StatusIcon({ status }: { status: MessageStatus }) {
   const configs = {
     sending: {
-      color: "text-gray-500",
+      color: "text-gray-500 dark:text-gray-400",
       label: "Sending...",
       icon: (
         <svg className="animate-spin h-2 w-2 sm:h-3 sm:w-3" viewBox="0 0 24 24">
@@ -592,7 +657,7 @@ function ReactionPicker({
   onReact: (type: ReactionType) => void;
 }) {
   return (
-    <div className="bg-white rounded-lg shadow-lg border p-0.5 sm:p-1 flex gap-0 z-20">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 p-0.5 sm:p-1 flex gap-0 z-20">
       {REACTIONS.map((reaction) => {
         const isActive = sanitizeReactions(reactions || []).some(
           (r) => r.userId === userId && r.type === reaction
@@ -601,8 +666,8 @@ function ReactionPicker({
           <button
             key={reaction}
             onClick={() => onReact(reaction)}
-            className={`hover:bg-gray-100 p-0.5 sm:p-1 rounded transition-colors text-xs sm:text-base ${
-              isActive ? "bg-blue-100" : ""
+            className={`hover:bg-gray-100 dark:hover:bg-gray-700 p-0.5 sm:p-1 rounded transition-colors text-xs sm:text-base ${
+              isActive ? "bg-blue-100 dark:bg-blue-900" : ""
             }`}
           >
             {reaction}
@@ -632,12 +697,12 @@ function ReactionDisplay({
         return (
           <div
             key={idx}
-            className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
-              isActive ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white"
+            className={`inline-flex items-center gap-0.5 bg-white dark:bg-gray-800 border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
+              isActive ? "border-blue-500 bg-blue-50 dark:bg-blue-900/50" : "border-gray-300 dark:border-gray-600"
             }`}
           >
             <span className="text-[10px] sm:text-sm">{reaction.type}</span>
-            <span className="text-[8px] sm:text-xs text-gray-600">{counts[reaction.type]}</span>
+            <span className="text-[8px] sm:text-xs text-gray-600 dark:text-gray-400">{counts[reaction.type]}</span>
           </div>
         );
       })}
@@ -686,14 +751,14 @@ function MessageBubble({
           className={`rounded-2xl p-2.5 sm:p-3 ${
             isOwn 
               ? "bg-blue-500 text-white shadow-md" 
-              : "bg-gray-100 text-gray-800 shadow-sm"
+              : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 shadow-sm"
           } overflow-hidden`}
         >
           <div className="flex items-center gap-2 mb-1">
-            <span className={`font-semibold text-xs sm:text-sm truncate max-w-[150px] ${isOwn ? 'text-white' : 'text-gray-700'}`}>
+            <span className={`font-semibold text-xs sm:text-sm truncate max-w-[150px] ${isOwn ? 'text-white' : 'text-gray-700 dark:text-gray-300'}`}>
               {message.username}
             </span>
-            <span className={`text-[10px] sm:text-xs ${isOwn ? 'text-blue-100' : 'text-gray-500'} flex-shrink-0`}>
+            <span className={`text-[10px] sm:text-xs ${isOwn ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'} flex-shrink-0`}>
               {formatTime(message.timestamp)}
             </span>
           </div>
@@ -701,7 +766,7 @@ function MessageBubble({
           {isImage && message.imageUrl ? (
             <div className="relative group">
               {message.imageThumbnail && !imageLoaded && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg">
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-600 rounded-lg">
                   <div className="animate-pulse w-full h-full flex items-center justify-center">
                     <img
                       src={message.imageThumbnail}
@@ -757,8 +822,8 @@ function UserListItem({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 p-3 hover:bg-gray-50 transition-all cursor-pointer ${
-        isCurrentUser ? "bg-blue-50" : ""
+      className={`flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all cursor-pointer ${
+        isCurrentUser ? "bg-blue-50 dark:bg-blue-900/50" : ""
       }`}
     >
       <div className="relative flex-shrink-0">
@@ -771,16 +836,16 @@ function UserListItem({
         >
           {user.username?.charAt(0).toUpperCase()}
         </div>
-        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white animate-pulse" />
+        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-800 truncate">
+        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
           {user.username}
           {isCurrentUser && (
-            <span className="ml-2 text-xs text-green-600 font-normal">(You)</span>
+            <span className="ml-2 text-xs text-green-600 dark:text-green-400 font-normal">(You)</span>
           )}
         </p>
-        <p className="text-xs text-gray-500 flex items-center gap-1">
+        <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
           <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
           Active now
         </p>
@@ -793,6 +858,7 @@ function UserListItem({
 // MAIN COMPONENT
 // ============================================================
 export default function Home() {
+  const { theme, toggleTheme } = useTheme();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
   const [username, setUsername] = useState("");
@@ -1395,6 +1461,8 @@ export default function Home() {
         username={username}
         onUsernameChange={handleUsernameChange}
         onSubmit={joinChat}
+        theme={theme}
+        toggleTheme={toggleTheme}
       />
     );
   }
@@ -1433,6 +1501,8 @@ export default function Home() {
       onPaste={handlePaste}
       onScroll={handleScroll}
       updateUserActivity={updateUserActivity}
+      theme={theme}
+      toggleTheme={toggleTheme}
     />
   );
 }
