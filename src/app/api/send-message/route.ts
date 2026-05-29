@@ -7,21 +7,17 @@ interface Message {
   timestamp: number;
   userId: string;
   type?: "text" | "image";
-  imageUrl?: string;
-  imageThumbnail?: string;
+  imageId?: string; // Reference to image instead of full data
 }
 
 interface FirebaseResponse {
   name: string;
 }
 
-// Your Pusher credentials
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
 const PUSHER_SECRET = "bbd18207d17c2f39529e";
 const PUSHER_CLUSTER = "ap1";
-
-// Your Firebase Database URL
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
 
 async function getSignature(secret: string, message: string): Promise<string> {
@@ -53,16 +49,9 @@ async function getMD5(str: string): Promise<string> {
 export async function POST(request: Request) {
   try {
     const message: Message = await request.json();
-    console.log("Received message to save:", {
-      id: message.id,
-      type: message.type,
-      textLength: message.text?.length,
-      hasImageUrl: !!message.imageUrl,
-      hasThumbnail: !!message.imageThumbnail,
-      username: message.username
-    });
+    console.log("Received message:", { id: message.id, type: message.type });
     
-    // Prepare Firebase data - always save full message data
+    // Prepare Firebase data - only store reference, not the actual image
     const firebaseData: any = {
       text: message.text,
       username: message.username,
@@ -72,33 +61,25 @@ export async function POST(request: Request) {
       type: message.type || "text"
     };
     
-    // Add image fields if present
-    if (message.type === "image") {
-      firebaseData.imageUrl = message.imageUrl;
-      firebaseData.imageThumbnail = message.imageThumbnail;
+    // For image messages, store the imageId reference
+    if (message.type === "image" && message.imageId) {
+      firebaseData.imageId = message.imageId;
     }
     
     // Save to Firebase Realtime Database
     const firebaseResponse = await fetch(`${FIREBASE_DB_URL}/messages.json`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(firebaseData),
     });
     
     const firebaseResult: FirebaseResponse = await firebaseResponse.json();
-    console.log("Firebase save result:", firebaseResult);
     
     if (!firebaseResponse.ok) {
-      console.error("Firebase save error:", firebaseResult);
-      return NextResponse.json(
-        { error: "Failed to save to Firebase", details: firebaseResult },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Failed to save to Firebase" }, { status: 500 });
     }
     
-    // Create the payload for Pusher HTTP API - send the full message object
+    // Create a small payload for Pusher (without image data)
     const pusherPayload = {
       name: "new-message",
       channel: "private-chat-channel",
@@ -109,8 +90,7 @@ export async function POST(request: Request) {
         timestamp: message.timestamp,
         userId: message.userId,
         type: message.type || "text",
-        imageUrl: message.imageUrl,
-        imageThumbnail: message.imageThumbnail,
+        imageId: message.imageId, // Send only the reference
       })
     };
     
@@ -123,40 +103,22 @@ export async function POST(request: Request) {
     
     const pusherResponse = await fetch(`https://api-${PUSHER_CLUSTER}.pusher.com${path}?${queryString}&auth_signature=${signature}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: bodyString,
     });
     
     if (!pusherResponse.ok) {
-      const errorText = await pusherResponse.text();
-      console.error("Pusher API error:", errorText);
-      // Still return success since Firebase saved
-      return NextResponse.json({ 
-        success: true, 
-        warning: "Saved to Firebase but Pusher notification failed",
-        firebaseId: firebaseResult.name,
-        message: message
-      });
+      console.error("Pusher API error:", await pusherResponse.text());
     }
-    
-    const pusherResult = await pusherResponse.json();
-    console.log("Pusher send result:", pusherResult);
     
     return NextResponse.json({ 
       success: true, 
-      pusher: pusherResult,
       firebaseId: firebaseResult.name,
-      message: message
+      messageId: message.id
     });
     
   } catch (error) {
     console.error("Error sending message:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      { error: "Failed to send message", details: errorMessage },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to send message" }, { status: 500 });
   }
 }
