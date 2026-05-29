@@ -2,6 +2,9 @@
 import Image from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
+import ImageUploadButton from "@/components/ImageUploadButton";
+import ImageMessage from "@/components/ImageMessage";
+import ImageViewer from "@/components/ImageViewer";
 
 // ============================================================
 // TYPES & INTERFACES
@@ -24,6 +27,8 @@ interface Message {
   userId: string;
   status?: MessageStatus;
   reactions?: Reaction[];
+  type?: 'text' | 'image';
+  imageUrl?: string;
 }
 
 interface User {
@@ -40,6 +45,8 @@ interface FirebaseMessage {
   userId: string;
   createdAt: string;
   reactions?: Reaction[];
+  type?: 'text' | 'image';
+  imageUrl?: string;
 }
 
 // ============================================================
@@ -405,6 +412,8 @@ export default function Home() {
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
+  const [isSendingImage, setIsSendingImage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(generateId());
@@ -523,6 +532,14 @@ export default function Home() {
     updateUserActivity();
   };
 
+  const scrollToBottom = () => {
+    setNewMessageCount(0);
+    setIsUserScrolled(false);
+    setShowScrollButton(false);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    updateUserActivity();
+  };
+
   // ── Load More Messages ───────────────────────────────────
   const loadMoreMessages = async () => {
     if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
@@ -545,6 +562,8 @@ export default function Home() {
           userId: msg.userId || "",
           status: "delivered" as MessageStatus,
           reactions: sanitizeReactions(msg.reactions || []),
+          type: msg.type || 'text',
+          imageUrl: msg.imageUrl,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
@@ -614,6 +633,8 @@ export default function Home() {
           userId: msg.userId || "",
           status: "delivered" as MessageStatus,
           reactions: sanitizeReactions(msg.reactions || []),
+          type: msg.type || 'text',
+          imageUrl: msg.imageUrl,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
@@ -659,6 +680,78 @@ export default function Home() {
       console.error("Error removing user:", err);
     }
   }, []);
+
+  // ── Send Image Function ───────────────────────────────────
+  const sendImage = async (base64Image: string, file: File) => {
+    if (!username) return;
+    
+    setIsSendingImage(true);
+    updateUserActivity();
+    
+    const messageId = generateId();
+    const newMessage: Message = {
+      id: messageId,
+      text: "",
+      imageUrl: "",
+      username,
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+      type: "image",
+    };
+    
+    // Add temporary message
+    setMessages((prev) => [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp));
+    scrollToBottom();
+    
+    try {
+      const response = await fetch("/api/send-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64: base64Image,
+          text: "",
+          username,
+          userId: userIdRef.current,
+          timestamp: Date.now(),
+        }),
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId
+              ? { ...result.message, status: "delivered", id: messageId }
+              : msg
+          )
+        );
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === messageId ? { ...msg, status: undefined } : msg
+            )
+          );
+        }, STATUS_CLEAR_DELAY);
+      } else {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId ? { ...msg, status: "error" } : msg
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Error sending image:", error);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, status: "error" } : msg
+        )
+      );
+    } finally {
+      setIsSendingImage(false);
+    }
+  };
 
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => {
@@ -722,6 +815,7 @@ export default function Home() {
       authEndpoint: "/api/pusher-auth",
     });
     const channel = pusher.subscribe("private-chat-channel");
+    
     channel.bind("new-message", (data: Message) => {
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
@@ -736,6 +830,22 @@ export default function Home() {
         return newMessages;
       });
     });
+    
+    channel.bind("new-image", (data: Message) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.id)) return prev;
+        const newMessages = [...prev, { ...data, status: "delivered" as MessageStatus }].sort(
+          (a, b) => a.timestamp - b.timestamp
+        );
+        
+        if (isUserScrolled) {
+          setNewMessageCount(prev => prev + 1);
+        }
+        
+        return newMessages;
+      });
+    });
+    
     channel.bind(
       "message-reaction",
       (data: { messageId: string; reaction: Reaction | null }) => {
@@ -755,6 +865,7 @@ export default function Home() {
         );
       }
     );
+    
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
@@ -800,14 +911,6 @@ export default function Home() {
     setHoveredMessageId(null);
   };
 
-  const scrollToBottom = () => {
-    setNewMessageCount(0);
-    setIsUserScrolled(false);
-    setShowScrollButton(false);
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    updateUserActivity();
-  };
-
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !username) return;
@@ -824,6 +927,7 @@ export default function Home() {
       userId: userIdRef.current,
       status: "sending",
       reactions: [],
+      type: "text",
     };
     setInputMessage("");
     const updateStatus = (status: MessageStatus | undefined) =>
@@ -1108,14 +1212,25 @@ export default function Home() {
                   )}
                   {messages.map((message) => (
                     <div key={message.id} id={`msg-${message.id}`}>
-                      <MessageBubble
-                        message={message}
-                        currentUserId={userIdRef.current}
-                        isHovered={hoveredMessageId === message.id}
-                        onMouseEnter={() => handleMouseEnter(message.id)}
-                        onMouseLeave={handleMouseLeave}
-                        onReact={(type) => addReaction(message.id, type)}
-                      />
+                      {message.type === 'image' ? (
+                        <ImageMessage
+                          imageUrl={message.imageUrl || ''}
+                          text={message.text}
+                          username={message.username}
+                          timestamp={message.timestamp}
+                          isOwn={message.userId === userIdRef.current}
+                          onImageClick={(url) => setViewerImage(url)}
+                        />
+                      ) : (
+                        <MessageBubble
+                          message={message}
+                          currentUserId={userIdRef.current}
+                          isHovered={hoveredMessageId === message.id}
+                          onMouseEnter={() => handleMouseEnter(message.id)}
+                          onMouseLeave={handleMouseLeave}
+                          onReact={(type) => addReaction(message.id, type)}
+                        />
+                      )}
                     </div>
                   ))}
                   <div ref={messagesEndRef} />
@@ -1125,19 +1240,25 @@ export default function Home() {
                 <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
                   <form onSubmit={sendMessage}>
                     <div className="flex gap-1 sm:gap-2">
+                      <ImageUploadButton 
+                        onImageSelect={sendImage}
+                        disabled={isSendingImage}
+                      />
                       <input
                         type="text"
                         value={inputMessage}
                         onChange={(e) => setInputMessage(e.target.value)}
                         onFocus={updateUserActivity}
                         onClick={updateUserActivity}
-                        placeholder="Type a message..."
+                        placeholder={isSendingImage ? "Uploading image..." : "Type a message or paste image..."}
                         className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0"
                         maxLength={500}
+                        disabled={isSendingImage}
                       />
                       <button
                         type="submit"
-                        className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0"
+                        disabled={isSendingImage}
+                        className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0 disabled:opacity-50"
                       >
                         Send
                       </button>
@@ -1149,6 +1270,14 @@ export default function Home() {
           </div>
         </div>
       </div>
+      
+      {/* Image Viewer Modal */}
+      {viewerImage && (
+        <ImageViewer 
+          imageUrl={viewerImage} 
+          onClose={() => setViewerImage(null)} 
+        />
+      )}
     </div>
   );
 }
