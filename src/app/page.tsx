@@ -28,7 +28,7 @@ interface Message {
   status?: MessageStatus;
   reactions?: Reaction[];
   type?: 'text' | 'image';
-  imageUrl?: string;
+  imageBase64?: string; // Change from imageUrl to imageBase64
 }
 
 interface User {
@@ -1250,8 +1250,8 @@ export default function Home() {
                   {messages.map((message) => (
                     <div key={message.id} id={`msg-${message.id}`}>
                       {message.type === 'image' ? (
-                        <ImageMessage
-                          imageUrl={message.imageUrl || ''}
+                      <ImageMessage
+                          imageBase64={message.imageBase64 || ''}
                           text={message.text}
                           username={message.username}
                           timestamp={message.timestamp}
