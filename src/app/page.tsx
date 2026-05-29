@@ -38,13 +38,6 @@ interface User {
   lastActive: number;
 }
 
-interface CombinedMessagesResponse {
-  success: boolean;
-  messages: Message[];
-  count: number;
-  error?: string;
-}
-
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -145,6 +138,21 @@ const fetchImage = async (imageId: string): Promise<{ full: string; thumbnail: s
   }
 };
 
+const enrichMessagesWithImages = async (messages: Message[]): Promise<Message[]> => {
+  const enriched = await Promise.all(
+    messages.map(async (msg) => {
+      if (msg.type === "image" && msg.imageId && !msg.imageUrl) {
+        const imageData = await fetchImage(msg.imageId);
+        if (imageData) {
+          return { ...msg, imageUrl: imageData.full, imageThumbnail: imageData.thumbnail };
+        }
+      }
+      return msg;
+    })
+  );
+  return enriched;
+};
+
 // ============================================================
 // API HELPERS
 // ============================================================
@@ -159,20 +167,13 @@ const api = {
       return 0;
     }
   },
-  getCombinedMessages: async (limit?: number, before?: string): Promise<CombinedMessagesResponse> => {
-    try {
-      const params = new URLSearchParams();
-      if (limit) params.append('limit', limit.toString());
-      if (before) params.append('before', before);
-      
-      const url = `/api/get-messages?${params.toString()}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      return data as CombinedMessagesResponse;
-    } catch (err) {
-      console.error("Error getting combined messages:", err);
-      return { success: false, messages: [], count: 0, error: "Failed to fetch messages" };
-    }
+  getMessages: (limit?: number) => {
+    let url = `${FIREBASE_DB_URL}/messages.json?orderBy="$key"`;
+    if (limit) url += `&limitToLast=${limit}`;
+    return fetch(url);
+  },
+  getMessagesBefore: (endBefore: string, limit: number) => {
+    return fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${endBefore}"&limitToLast=${limit}`);
   },
   getUsers: () => fetch(`${FIREBASE_DB_URL}/users.json`),
   putUser: (userId: string, data: object) =>
@@ -597,30 +598,37 @@ export default function Home() {
   // ── Load More Messages ──────────────────────────────────────────────
   const loadMoreMessages = async () => {
     if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
-    
     setIsLoadingMore(true);
     try {
       const oldestMessage = messages[0];
       if (!oldestMessage) return;
+      const res = await api.getMessagesBefore(oldestMessage.id, MESSAGES_PER_PAGE);
+      const data: Record<string, any> = await res.json();
+      const olderMessages: Message[] = Object.entries(data || {})
+        .filter(([, msg]) => msg?.text && msg?.username)
+        .map(([key, msg]) => ({
+          id: key,
+          text: msg.text,
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered" as MessageStatus,
+          reactions: sanitizeReactions(msg.reactions || []),
+          type: msg.type || "text",
+          imageId: msg.imageId,
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
       
-      const result = await api.getCombinedMessages(MESSAGES_PER_PAGE, oldestMessage.id);
+      const enrichedOlderMessages = await enrichMessagesWithImages(olderMessages);
       
-      if (result.success && result.messages && result.messages.length > 0) {
-        const olderMessages = result.messages;
-        
-        if (olderMessages.length < MESSAGES_PER_PAGE) {
-          setHasMoreMessages(false);
-        } else {
-          const newOldestMessage = olderMessages[0];
-          const olderCheck = await api.getCombinedMessages(1, newOldestMessage.id);
-          setHasMoreMessages(olderCheck.count > 0);
-        }
-        
+      if (enrichedOlderMessages.length === 0 || enrichedOlderMessages.length < MESSAGES_PER_PAGE) {
+        setHasMoreMessages(false);
+      }
+      
+      if (enrichedOlderMessages.length > 0) {
         const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
         const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
-        
-        setMessages(prev => [...olderMessages, ...prev]);
-        
+        setMessages(prev => [...enrichedOlderMessages, ...prev]);
         setTimeout(() => {
           if (messagesContainerRef.current) {
             const newScrollHeight = messagesContainerRef.current.scrollHeight;
@@ -629,8 +637,6 @@ export default function Home() {
           }
           setShowLoadMoreButton(false);
         }, 100);
-      } else {
-        setHasMoreMessages(false);
       }
     } catch (err) {
       console.error("Error loading more messages:", err);
@@ -639,36 +645,58 @@ export default function Home() {
     }
   };
 
+  const checkForOlderMessages = useCallback(async () => {
+    if (messages.length === 0) return;
+    try {
+      const oldestMessageId = messages[0].id;
+      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
+      const data = await res.json();
+      setHasMoreMessages(Object.keys(data || {}).length > 0);
+    } catch (err) {
+      console.error("Error checking for older messages:", err);
+    }
+  }, [messages]);
+
   // ── Load Initial Messages ───────────────────────────────────────────
   const loadMessages = useCallback(async () => {
     setIsLoading(true);
     try {
-      const result = await api.getCombinedMessages(MESSAGES_PER_PAGE);
+      const totalCount = await api.getMessagesCount();
+      setTotalMessages(totalCount);
+      const res = await api.getMessages(MESSAGES_PER_PAGE);
+      const data: Record<string, any> = await res.json();
+      const loaded: Message[] = Object.entries(data || {})
+        .filter(([, msg]) => msg?.text && msg?.username)
+        .map(([key, msg]) => ({
+          id: key,
+          text: msg.text,
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered" as MessageStatus,
+          reactions: sanitizeReactions(msg.reactions || []),
+          type: msg.type || "text",
+          imageId: msg.imageId,
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
       
-      if (result.success && result.messages) {
-        setMessages(result.messages);
-        setTotalMessages(result.count);
-        
-        if (result.messages.length > 0) {
-          const oldestMessage = result.messages[0];
-          const olderCheck = await api.getCombinedMessages(1, oldestMessage.id);
-          setHasMoreMessages(olderCheck.count > 0);
-        } else {
-          setHasMoreMessages(false);
-        }
-        
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-        }, 100);
+      const enrichedMessages = await enrichMessagesWithImages(loaded);
+      setMessages(enrichedMessages);
+      
+      if (loaded.length > 0) {
+        const oldestMessageId = loaded[0].id;
+        const olderCheck = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
+        const olderData = await olderCheck.json();
+        setHasMoreMessages(Object.keys(olderData || {}).length > 0);
       } else {
-        console.error("Failed to load messages:", result.error);
-        setMessages([]);
         setHasMoreMessages(false);
       }
+      
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 100);
     } catch (err) {
       console.error("Error loading messages:", err);
-      setMessages([]);
-      setHasMoreMessages(false);
     } finally {
       setIsLoading(false);
     }
@@ -716,6 +744,11 @@ export default function Home() {
     const interval = setInterval(loadOnlineUsers, USER_REFRESH_INTERVAL);
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
+
+  useEffect(() => {
+    if (!isJoined || messages.length === 0) return;
+    checkForOlderMessages();
+  }, [isJoined, messages, checkForOlderMessages]);
 
   useEffect(() => {
     if (!isUserScrolled && messagesEndRef.current && messages.length > 0 && !isLoadingMore) {
@@ -902,25 +935,44 @@ export default function Home() {
     channel.bind("new-message", async (data: any) => {
       console.log("Received new message via Pusher:", data);
       
+      // Check if message already exists
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.id)) return prev;
+        return prev;
+      });
+      
+      // Fetch image data if it's an image message
       let imageUrl = undefined;
       let imageThumbnail = undefined;
       
       if (data.type === "image" && data.imageId) {
+        console.log("Fetching image for ID:", data.imageId);
         const imageData = await fetchImage(data.imageId);
         if (imageData) {
           imageUrl = imageData.full;
           imageThumbnail = imageData.thumbnail;
+          console.log("Image fetched successfully");
+        } else {
+          console.log("Failed to fetch image");
         }
       }
       
+      // Add the message with image data
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
         
         const newMessage: Message = {
-          ...data,
+          id: data.id,
+          text: data.text,
+          username: data.username,
+          timestamp: data.timestamp,
+          userId: data.userId,
+          type: data.type || "text",
+          imageId: data.imageId,
           status: "delivered" as MessageStatus,
-          imageUrl,
-          imageThumbnail,
+          reactions: data.reactions || [],
+          imageUrl: imageUrl,
+          imageThumbnail: imageThumbnail,
         };
         
         const newMessages = [...prev, newMessage].sort(
@@ -1102,7 +1154,6 @@ export default function Home() {
         <div className="w-full lg:max-w-[70%] h-full min-h-0">
           <div className="bg-white rounded-lg sm:rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
             <div className="flex flex-row h-full min-h-0">
-              {/* Online Users Sidebar */}
               <div className={`fixed lg:relative lg:block lg:w-64 w-64 bg-white border-r z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
                 <div className="p-2 sm:p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600 sticky top-0">
                   <div className="flex items-center justify-between">
@@ -1134,7 +1185,6 @@ export default function Home() {
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
               )}
 
-              {/* Chat Area */}
               <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden">
                 {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
                   <div className="sticky top-0 z-10 p-1 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b flex-shrink-0">
