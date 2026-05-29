@@ -1,5 +1,5 @@
 "use client";
-import Image from "next/image";
+import NextImage from "next/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Pusher from "pusher-js";
 
@@ -27,6 +27,7 @@ interface Message {
   reactions?: Reaction[];
   type?: MessageType;
   imageUrl?: string;
+  imageThumbnail?: string; // Add thumbnail for faster loading
 }
 
 interface User {
@@ -45,6 +46,7 @@ interface FirebaseMessage {
   reactions?: Reaction[];
   type?: MessageType;
   imageUrl?: string;
+  imageThumbnail?: string;
 }
 
 // ============================================================
@@ -57,8 +59,9 @@ const USER_ACTIVE_THRESHOLD = 60000;
 const USER_REFRESH_INTERVAL = 5000;
 const STATUS_CLEAR_DELAY = 2000;
 const MESSAGES_PER_PAGE = 50;
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB (reduced for better performance)
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const MAX_IMAGE_DIMENSION = 600; // Reduced for better performance
 
 // ============================================================
 // UTILITIES
@@ -105,31 +108,44 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-// Compress image before sending
-const compressImage = (base64: string, maxWidth = 800): Promise<string> => {
+// Compress image and create thumbnail
+const processImage = async (file: File): Promise<{ full: string; thumbnail: string }> => {
   return new Promise((resolve, reject) => {
-    const img = document.createElement('img'); // Use createElement instead
+    const img = document.createElement('img');
     img.onload = () => {
       const canvas = document.createElement("canvas");
+      const thumbCanvas = document.createElement("canvas");
+      
+      // Calculate dimensions for full image (max 800px)
       let width = img.width;
       let height = img.height;
-      
-      if (width > maxWidth) {
-        height = (height * maxWidth) / width;
-        width = maxWidth;
+      if (width > 800) {
+        height = (height * 800) / width;
+        width = 800;
       }
-      
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext("2d");
       ctx?.drawImage(img, 0, 0, width, height);
+      const full = canvas.toDataURL("image/jpeg", 0.7);
       
-      // Get compressed base64 (0.7 quality for JPEG)
-      const compressed = canvas.toDataURL("image/jpeg", 0.7);
-      resolve(compressed);
+      // Create thumbnail (max 150px)
+      let thumbWidth = img.width;
+      let thumbHeight = img.height;
+      if (thumbWidth > 150) {
+        thumbHeight = (thumbHeight * 150) / thumbWidth;
+        thumbWidth = 150;
+      }
+      thumbCanvas.width = thumbWidth;
+      thumbCanvas.height = thumbHeight;
+      const thumbCtx = thumbCanvas.getContext("2d");
+      thumbCtx?.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+      const thumbnail = thumbCanvas.toDataURL("image/jpeg", 0.5);
+      
+      resolve({ full, thumbnail });
     };
     img.onerror = reject;
-    img.src = base64;
+    img.src = URL.createObjectURL(file);
   });
 };
 
@@ -337,6 +353,7 @@ function MessageBubble({
   const uniqueReactions = getUniqueReactions(message.reactions);
   const hasReactions = uniqueReactions.length > 0;
   const isImage = message.type === "image";
+  const [imageLoaded, setImageLoaded] = useState(false);
   
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} ${hasReactions ? 'mb-6 sm:mb-7' : 'mb-2 sm:mb-3'}`}>
@@ -373,11 +390,26 @@ function MessageBubble({
           {/* Message Content - Text or Image */}
           {isImage && message.imageUrl ? (
             <div className="relative group">
+              {message.imageThumbnail && !imageLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded">
+                  <div className="animate-pulse w-full h-full flex items-center justify-center">
+                    <img
+                      src={message.imageThumbnail}
+                      alt="Loading thumbnail"
+                      className="max-w-full max-h-[200px] rounded blur-sm"
+                      style={{ maxWidth: '100%', height: 'auto' }}
+                    />
+                  </div>
+                </div>
+              )}
               <img
                 src={message.imageUrl}
                 alt="Shared image"
-                className="max-w-full max-h-[300px] rounded-lg cursor-pointer"
+                className={`max-w-full max-h-[300px] rounded-lg cursor-pointer transition-opacity ${
+                  !imageLoaded ? 'opacity-0' : 'opacity-100'
+                }`}
                 onClick={() => window.open(message.imageUrl, '_blank')}
+                onLoad={() => setImageLoaded(true)}
                 style={{ maxWidth: '100%', height: 'auto' }}
               />
             </div>
@@ -610,6 +642,7 @@ export default function Home() {
           reactions: sanitizeReactions(msg.reactions || []),
           type: msg.type || "text",
           imageUrl: msg.imageUrl,
+          imageThumbnail: msg.imageThumbnail,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
@@ -681,6 +714,7 @@ export default function Home() {
           reactions: sanitizeReactions(msg.reactions || []),
           type: msg.type || "text",
           imageUrl: msg.imageUrl,
+          imageThumbnail: msg.imageThumbnail,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
@@ -793,7 +827,7 @@ export default function Home() {
     
     // Validate file size
     if (file.size > MAX_IMAGE_SIZE) {
-      alert("Image must be less than 5MB");
+      alert("Image must be less than 2MB");
       return;
     }
     
@@ -804,9 +838,8 @@ export default function Home() {
     const messageId = generateId();
     
     try {
-      // Convert to base64 and compress
-      const base64 = await fileToBase64(file);
-      const compressedBase64 = await compressImage(base64);
+      // Process image (compress and create thumbnail)
+      const { full, thumbnail } = await processImage(file);
       
       const newMessage: Message = {
         id: messageId,
@@ -817,7 +850,8 @@ export default function Home() {
         status: "sending",
         reactions: [],
         type: "image",
-        imageUrl: compressedBase64,
+        imageUrl: full,
+        imageThumbnail: thumbnail,
       };
       
       const updateStatus = (status: MessageStatus | undefined) =>
@@ -825,11 +859,18 @@ export default function Home() {
           prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
         );
       
+      // Add message locally first
       setMessages((prev) => {
         if (prev.some((m) => m.id === messageId)) return prev;
         return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
       });
       
+      // Scroll to bottom
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+      
+      // Send to server via API
       try {
         updateStatus("sent");
         const res = await api.sendMessage(newMessage);
@@ -838,6 +879,7 @@ export default function Home() {
           setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
         } else {
           updateStatus("error");
+          console.error("Failed to send image:", await res.text());
         }
       } catch (err) {
         console.error("Error sending image:", err);
@@ -846,9 +888,6 @@ export default function Home() {
       
       setIsUserScrolled(false);
       setShowScrollButton(false);
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
       
     } catch (err) {
       console.error("Error processing image:", err);
@@ -919,6 +958,7 @@ export default function Home() {
     });
     const channel = pusher.subscribe("private-chat-channel");
     channel.bind("new-message", (data: Message) => {
+      console.log("Received new message via Pusher:", data);
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
         const newMessages = [...prev, { ...data, status: "delivered" as MessageStatus }].sort(
@@ -927,6 +967,10 @@ export default function Home() {
         
         if (isUserScrolled) {
           setNewMessageCount(prev => prev + 1);
+        } else {
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }, 100);
         }
         
         return newMessages;
@@ -1049,7 +1093,7 @@ export default function Home() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full">
           <div className="text-center mb-6 sm:mb-8">
-            <Image
+            <NextImage
               src="/next.svg"
               alt="Logo"
               width={100}
@@ -1098,7 +1142,7 @@ export default function Home() {
       <div className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="px-3 sm:px-4 py-2 sm:py-3 flex justify-between items-center w-full lg:max-w-[70%] lg:mx-auto">
           <div className="flex items-center gap-2 sm:gap-3">
-            <Image src="/next.svg" alt="Logo" width={40} height={10} className="sm:w-[60px]" />
+            <NextImage src="/next.svg" alt="Logo" width={40} height={10} className="sm:w-[60px]" />
             <h1 className="text-sm sm:text-lg font-semibold text-gray-800">
               Chat
             </h1>
@@ -1293,6 +1337,7 @@ export default function Home() {
                         onClick={handleImageButtonClick}
                         disabled={isUploading}
                         className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Send image (max 2MB)"
                       >
                         {isUploading ? (
                           <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24">
@@ -1333,7 +1378,7 @@ export default function Home() {
                       </button>
                     </div>
                     <div className="text-[8px] sm:text-xs text-gray-500 px-1">
-                      📷 Click the camera icon to share images (max 5MB)
+                      📷 Click the camera icon to share images (max 2MB, JPEG/PNG/GIF/WEBP)
                     </div>
                   </form>
                 </div>
