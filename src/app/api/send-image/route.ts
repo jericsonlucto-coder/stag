@@ -29,48 +29,30 @@ const PUSHER_SECRET = "bbd18207d17c2f39529e";
 const PUSHER_CLUSTER = "ap1";
 
 const FIREBASE_DB_URL = "https://chatto-659ec-default-rtdb.firebaseio.com";
-const MAX_IMAGE_SIZE_MB = 2; // Limit image size to 2MB
-const MAX_BASE64_LENGTH = MAX_IMAGE_SIZE_MB * 1024 * 1024 * 1.37; // Base64 is ~37% larger
 
-// Compress image by reducing quality (simple approach)
-function compressBase64Image(base64Image: string, maxSizeMB: number = 2): string {
-  // Check if image needs compression
-  const sizeInMB = base64Image.length / (1024 * 1024) * 0.75; // Approximate original size
-  
-  if (sizeInMB <= maxSizeMB) {
-    return base64Image; // No compression needed
+// Store image directly in Firebase as base64
+async function storeImageInFirebase(base64Image: string, messageId: string): Promise<string> {
+  // Validate base64 format
+  if (!base64Image.startsWith('data:image/')) {
+    throw new Error('Invalid image format');
   }
   
-  console.log(`Image size ${sizeInMB.toFixed(2)}MB exceeds limit, compression needed`);
-  // Note: Full image compression would require a library like sharp
-  // For now, we'll accept the image but log a warning
-  console.warn(`Large image detected: ${sizeInMB.toFixed(2)}MB. Consider implementing image compression.`);
-  return base64Image;
-}
-
-// Store image in Firebase as a separate node
-async function storeImageInFirebase(base64Image: string, messageId: string): Promise<string> {
-  // Compress image if needed
-  const compressedImage = compressBase64Image(base64Image, MAX_IMAGE_SIZE_MB);
-  
-  // Check image size
-  const imageSize = compressedImage.length;
+  // Get image size for logging
+  const imageSize = base64Image.length;
   const sizeInKB = (imageSize / 1024).toFixed(2);
   console.log(`Storing image size: ${sizeInKB} KB (base64)`);
   
-  // Validate size (Firebase has limits)
-  if (imageSize > 10 * 1024 * 1024) { // 10MB base64 limit
-    throw new Error('Image too large. Please use images under 5MB.');
-  }
-  
-  // Store in a separate "images" node
+  // Store in Firebase - use PUT to create/update at specific path
   const imageResponse = await fetch(`${FIREBASE_DB_URL}/images/${messageId}.json`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
-      data: compressedImage,
+      data: base64Image,
       size: imageSize,
       timestamp: Date.now(),
+      contentType: base64Image.split(';')[0].split(':')[1] // Extract MIME type
     }),
   });
   
@@ -80,7 +62,7 @@ async function storeImageInFirebase(base64Image: string, messageId: string): Pro
     throw new Error(`Failed to store image: ${imageResponse.status}`);
   }
   
-  // Return the URL to fetch the image
+  // Return the URL to access the image
   return `${FIREBASE_DB_URL}/images/${messageId}.json`;
 }
 
@@ -120,18 +102,12 @@ export async function POST(request: Request) {
     const body: SendImageRequest = await request.json();
     const { imageBase64, text, username, userId, timestamp } = body;
     
-    // Validate required fields
     if (!imageBase64) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
     
     if (!username || !userId) {
       return NextResponse.json({ error: "Missing user information" }, { status: 400 });
-    }
-    
-    // Validate image format
-    if (!imageBase64.startsWith('data:image/')) {
-      return NextResponse.json({ error: "Invalid image format" }, { status: 400 });
     }
     
     const messageId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -157,7 +133,7 @@ export async function POST(request: Request) {
       userId,
     };
     
-    // Save message metadata to Firebase
+    // Save message metadata to Firebase messages node
     const firebaseResponse = await fetch(`${FIREBASE_DB_URL}/messages.json`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -173,13 +149,12 @@ export async function POST(request: Request) {
       }),
     });
     
-    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
-    
     if (!firebaseResponse.ok) {
-      console.error("Firebase save error:", firebaseResult);
+      console.error("Firebase save error:", await firebaseResponse.text());
       return NextResponse.json({ error: "Failed to save message to Firebase" }, { status: 500 });
     }
     
+    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
     console.log("Saved message to Firebase with ID:", firebaseResult.name);
     
     // Trigger Pusher event
@@ -187,8 +162,13 @@ export async function POST(request: Request) {
       name: "new-image",
       channel: "private-chat-channel",
       data: JSON.stringify({ 
-        ...imageMessage, 
-        id: messageId
+        id: messageId,
+        imageUrl: imageMessage.imageUrl,
+        text: imageMessage.text,
+        username: imageMessage.username,
+        timestamp: imageMessage.timestamp,
+        userId: imageMessage.userId,
+        type: "image"
       })
     };
     
@@ -214,12 +194,9 @@ export async function POST(request: Request) {
         success: true, 
         message: imageMessage,
         firebaseId: firebaseResult.name,
-        warning: "Message saved but real-time notification failed"
+        warning: "Saved but Pusher notification failed"
       });
     }
-    
-    const pusherResult = await pusherResponse.json();
-    console.log("Pusher notification sent:", pusherResult);
     
     return NextResponse.json({ 
       success: true, 
@@ -228,10 +205,9 @@ export async function POST(request: Request) {
     });
     
   } catch (error) {
-    console.error("Error in send-image endpoint:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("Error sending image:", error);
     return NextResponse.json(
-      { error: "Failed to send image", details: errorMessage },
+      { error: "Failed to send image", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }
