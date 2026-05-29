@@ -10,6 +10,10 @@ interface Message {
   imageId?: string;
 }
 
+interface FirebaseResponse {
+  name: string;
+}
+
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
 const PUSHER_SECRET = "bbd18207d17c2f39529e";
@@ -69,7 +73,7 @@ export async function POST(request: Request) {
       body: JSON.stringify(firebaseData),
     });
     
-    const firebaseResult = await firebaseResponse.json();
+    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
     console.log("Firebase save result:", firebaseResult);
     
     if (!firebaseResponse.ok) {
@@ -105,7 +109,8 @@ export async function POST(request: Request) {
     });
     
     if (!pusherResponse.ok) {
-      console.error("Pusher API error:", await pusherResponse.text());
+      const errorText = await pusherResponse.text();
+      console.error("Pusher API error:", errorText);
     }
     
     return NextResponse.json({ 
