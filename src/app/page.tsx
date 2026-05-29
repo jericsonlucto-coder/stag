@@ -8,6 +8,7 @@ import Pusher from "pusher-js";
 // ============================================================
 type MessageStatus = "sending" | "sent" | "delivered" | "error";
 type ReactionType = "👍" | "❤️" | "😂" | "😮" | "😢" | "🙏";
+type MessageType = "text" | "image";
 
 interface Reaction {
   type: ReactionType;
@@ -24,6 +25,8 @@ interface Message {
   userId: string;
   status?: MessageStatus;
   reactions?: Reaction[];
+  type?: MessageType;
+  imageUrl?: string;
 }
 
 interface User {
@@ -40,6 +43,8 @@ interface FirebaseMessage {
   userId: string;
   createdAt: string;
   reactions?: Reaction[];
+  type?: MessageType;
+  imageUrl?: string;
 }
 
 // ============================================================
@@ -52,6 +57,8 @@ const USER_ACTIVE_THRESHOLD = 60000;
 const USER_REFRESH_INTERVAL = 5000;
 const STATUS_CLEAR_DELAY = 2000;
 const MESSAGES_PER_PAGE = 50;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 // ============================================================
 // UTILITIES
@@ -86,6 +93,44 @@ const getUniqueReactions = (reactions?: Reaction[]): Reaction[] => {
     if (!unique.has(r.type)) unique.set(r.type, r);
   });
   return Array.from(unique.values());
+};
+
+// Convert file to base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+};
+
+// Compress image before sending
+const compressImage = (base64: string, maxWidth = 800): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let width = img.width;
+      let height = img.height;
+      
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width;
+        width = maxWidth;
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(img, 0, 0, width, height);
+      
+      // Get compressed base64 (0.7 quality for JPEG)
+      const compressed = canvas.toDataURL("image/jpeg", 0.7);
+      resolve(compressed);
+    };
+    img.onerror = reject;
+    img.src = base64;
+  });
 };
 
 // ============================================================
@@ -291,6 +336,7 @@ function MessageBubble({
   const isOwn = message.userId === currentUserId;
   const uniqueReactions = getUniqueReactions(message.reactions);
   const hasReactions = uniqueReactions.length > 0;
+  const isImage = message.type === "image";
   
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} ${hasReactions ? 'mb-6 sm:mb-7' : 'mb-2 sm:mb-3'}`}>
@@ -323,9 +369,24 @@ function MessageBubble({
               {formatTime(message.timestamp)}
             </span>
           </div>
-          <p className="break-words whitespace-pre-wrap text-[11px] sm:text-sm overflow-hidden">
-            {message.text}
-          </p>
+          
+          {/* Message Content - Text or Image */}
+          {isImage && message.imageUrl ? (
+            <div className="relative group">
+              <img
+                src={message.imageUrl}
+                alt="Shared image"
+                className="max-w-full max-h-[300px] rounded-lg cursor-pointer"
+                onClick={() => window.open(message.imageUrl, '_blank')}
+                style={{ maxWidth: '100%', height: 'auto' }}
+              />
+            </div>
+          ) : (
+            <p className="break-words whitespace-pre-wrap text-[11px] sm:text-sm overflow-hidden">
+              {message.text}
+            </p>
+          )}
+          
           {isOwn && message.status && (
             <div className="mt-0.5 flex justify-end">
               <StatusIcon status={message.status} />
@@ -405,8 +466,10 @@ export default function Home() {
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const userIdRef = useRef<string>(generateId());
   const userHeartbeatRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -545,6 +608,8 @@ export default function Home() {
           userId: msg.userId || "",
           status: "delivered" as MessageStatus,
           reactions: sanitizeReactions(msg.reactions || []),
+          type: msg.type || "text",
+          imageUrl: msg.imageUrl,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
@@ -614,6 +679,8 @@ export default function Home() {
           userId: msg.userId || "",
           status: "delivered" as MessageStatus,
           reactions: sanitizeReactions(msg.reactions || []),
+          type: msg.type || "text",
+          imageUrl: msg.imageUrl,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
@@ -714,6 +781,135 @@ export default function Home() {
     };
   }, [isJoined, updateLastActive, updateUserActivity]);
 
+  // ── Image Upload Function ─────────────────────────────────
+  const handleImageUpload = async (file: File) => {
+    if (!file) return;
+    
+    // Validate file type
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      alert("Please upload a valid image (JPEG, PNG, GIF, or WEBP)");
+      return;
+    }
+    
+    // Validate file size
+    if (file.size > MAX_IMAGE_SIZE) {
+      alert("Image must be less than 5MB");
+      return;
+    }
+    
+    setIsUploading(true);
+    updateUserActivity();
+    await updateLastActive();
+    
+    const messageId = generateId();
+    
+    try {
+      // Convert to base64 and compress
+      const base64 = await fileToBase64(file);
+      const compressedBase64 = await compressImage(base64);
+      
+      const newMessage: Message = {
+        id: messageId,
+        text: "📷 Image",
+        username,
+        timestamp: Date.now(),
+        userId: userIdRef.current,
+        status: "sending",
+        reactions: [],
+        type: "image",
+        imageUrl: compressedBase64,
+      };
+      
+      const updateStatus = (status: MessageStatus | undefined) =>
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+        );
+      
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === messageId)) return prev;
+        return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+      });
+      
+      try {
+        updateStatus("sent");
+        const res = await api.sendMessage(newMessage);
+        if (res.ok) {
+          updateStatus("delivered");
+          setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+        } else {
+          updateStatus("error");
+        }
+      } catch (err) {
+        console.error("Error sending image:", err);
+        updateStatus("error");
+      }
+      
+      setIsUserScrolled(false);
+      setShowScrollButton(false);
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+      
+    } catch (err) {
+      console.error("Error processing image:", err);
+      alert("Failed to process image. Please try again.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  // ── Send Text Message ─────────────────────────────────────
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputMessage.trim() || !username) return;
+    
+    updateUserActivity();
+    await updateLastActive();
+    
+    const messageId = generateId();
+    const newMessage: Message = {
+      id: messageId,
+      text: inputMessage,
+      username,
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+      type: "text",
+    };
+    setInputMessage("");
+    const updateStatus = (status: MessageStatus | undefined) =>
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+      );
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === messageId)) return prev;
+      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+    });
+    try {
+      updateStatus("sent");
+      const res = await api.sendMessage(newMessage);
+      if (res.ok) {
+        updateStatus("delivered");
+        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+      } else {
+        updateStatus("error");
+      }
+    } catch (err) {
+      console.error("Error sending message:", err);
+      updateStatus("error");
+    }
+    
+    setIsUserScrolled(false);
+    setShowScrollButton(false);
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
+
   // ── Pusher ────────────────────────────────────────────────
   useEffect(() => {
     if (!isJoined) return;
@@ -808,53 +1004,6 @@ export default function Home() {
     updateUserActivity();
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputMessage.trim() || !username) return;
-    
-    updateUserActivity();
-    await updateLastActive();
-    
-    const messageId = generateId();
-    const newMessage: Message = {
-      id: messageId,
-      text: inputMessage,
-      username,
-      timestamp: Date.now(),
-      userId: userIdRef.current,
-      status: "sending",
-      reactions: [],
-    };
-    setInputMessage("");
-    const updateStatus = (status: MessageStatus | undefined) =>
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
-      );
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === messageId)) return prev;
-      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-    });
-    try {
-      updateStatus("sent");
-      const res = await api.sendMessage(newMessage);
-      if (res.ok) {
-        updateStatus("delivered");
-        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
-      } else {
-        updateStatus("error");
-      }
-    } catch (err) {
-      console.error("Error sending message:", err);
-      updateStatus("error");
-    }
-    
-    setIsUserScrolled(false);
-    setShowScrollButton(false);
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-  };
-
   const joinChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
@@ -879,6 +1028,19 @@ export default function Home() {
 
   const handleMouseLeave = () => {
     hoverTimeoutRef.current = setTimeout(() => setHoveredMessageId(null), 200);
+  };
+
+  // Trigger file input click
+  const handleImageButtonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Handle file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImageUpload(file);
+    }
   };
 
   // ── Join Screen ───────────────────────────────────────────
@@ -1123,8 +1285,36 @@ export default function Home() {
 
                 {/* Input Area */}
                 <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
-                  <form onSubmit={sendMessage}>
+                  <form onSubmit={sendMessage} className="space-y-2">
                     <div className="flex gap-1 sm:gap-2">
+                      {/* Image Upload Button */}
+                      <button
+                        type="button"
+                        onClick={handleImageButtonClick}
+                        disabled={isUploading}
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isUploading ? (
+                          <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        ) : (
+                          <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </button>
+                      
+                      {/* Hidden file input */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                      
                       <input
                         type="text"
                         value={inputMessage}
@@ -1141,6 +1331,9 @@ export default function Home() {
                       >
                         Send
                       </button>
+                    </div>
+                    <div className="text-[8px] sm:text-xs text-gray-500 px-1">
+                      📷 Click the camera icon to share images (max 5MB)
                     </div>
                   </form>
                 </div>
