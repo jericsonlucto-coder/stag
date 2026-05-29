@@ -145,21 +145,6 @@ const fetchImage = async (imageId: string): Promise<{ full: string; thumbnail: s
   }
 };
 
-const enrichMessagesWithImages = async (messages: Message[]): Promise<Message[]> => {
-  const enriched = await Promise.all(
-    messages.map(async (msg) => {
-      if (msg.type === "image" && msg.imageId && !msg.imageUrl) {
-        const imageData = await fetchImage(msg.imageId);
-        if (imageData) {
-          return { ...msg, imageUrl: imageData.full, imageThumbnail: imageData.thumbnail };
-        }
-      }
-      return msg;
-    })
-  );
-  return enriched;
-};
-
 // ============================================================
 // API HELPERS
 // ============================================================
@@ -174,19 +159,13 @@ const api = {
       return 0;
     }
   },
-  getMessages: (limit?: number) => {
-    let url = `${FIREBASE_DB_URL}/messages.json?orderBy="$key"`;
-    if (limit) url += `&limitToLast=${limit}`;
-    return fetch(url);
-  },
-  getMessagesBefore: (endBefore: string, limit: number) => {
-    return fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${endBefore}"&limitToLast=${limit}`);
-  },
   getCombinedMessages: async (limit?: number, before?: string): Promise<CombinedMessagesResponse> => {
     try {
-      let url = `/api/get-messages?`;
-      if (limit) url += `limit=${limit}`;
-      if (before) url += `&before=${before}`;
+      const params = new URLSearchParams();
+      if (limit) params.append('limit', limit.toString());
+      if (before) params.append('before', before);
+      
+      const url = `/api/get-messages?${params.toString()}`;
       const res = await fetch(url);
       const data = await res.json();
       return data as CombinedMessagesResponse;
@@ -616,97 +595,84 @@ export default function Home() {
   };
 
   // ── Load More Messages ──────────────────────────────────────────────
- const loadMoreMessages = async () => {
-  if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
-  
-  setIsLoadingMore(true);
-  try {
-    const oldestMessage = messages[0];
-    if (!oldestMessage) return;
+  const loadMoreMessages = async () => {
+    if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
     
-    const result = await api.getCombinedMessages(MESSAGES_PER_PAGE, oldestMessage.id);
-    
-    if (result.success && result.messages && result.messages.length > 0) {
-      const olderMessages = result.messages;
-      
-      if (olderMessages.length < MESSAGES_PER_PAGE) {
-        setHasMoreMessages(false);
-      } else {
-        // Check if there are even older messages
-        const newOldestMessage = olderMessages[0];
-        const olderCheck = await api.getCombinedMessages(1, newOldestMessage.id);
-        setHasMoreMessages(olderCheck.count > 0);
-      }
-      
-      const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
-      const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
-      
-      setMessages(prev => [...olderMessages, ...prev]);
-      
-      setTimeout(() => {
-        if (messagesContainerRef.current) {
-          const newScrollHeight = messagesContainerRef.current.scrollHeight;
-          const heightDifference = newScrollHeight - scrollHeightBefore;
-          messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
-        }
-        setShowLoadMoreButton(false);
-      }, 100);
-    } else {
-      setHasMoreMessages(false);
-    }
-  } catch (err) {
-    console.error("Error loading more messages:", err);
-  } finally {
-    setIsLoadingMore(false);
-  }
-};
-  const checkForOlderMessages = useCallback(async () => {
-    if (messages.length === 0) return;
+    setIsLoadingMore(true);
     try {
-      const oldestMessageId = messages[0].id;
-      const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
-      const data = await res.json();
-      setHasMoreMessages(Object.keys(data || {}).length > 0);
+      const oldestMessage = messages[0];
+      if (!oldestMessage) return;
+      
+      const result = await api.getCombinedMessages(MESSAGES_PER_PAGE, oldestMessage.id);
+      
+      if (result.success && result.messages && result.messages.length > 0) {
+        const olderMessages = result.messages;
+        
+        if (olderMessages.length < MESSAGES_PER_PAGE) {
+          setHasMoreMessages(false);
+        } else {
+          const newOldestMessage = olderMessages[0];
+          const olderCheck = await api.getCombinedMessages(1, newOldestMessage.id);
+          setHasMoreMessages(olderCheck.count > 0);
+        }
+        
+        const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
+        const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
+        
+        setMessages(prev => [...olderMessages, ...prev]);
+        
+        setTimeout(() => {
+          if (messagesContainerRef.current) {
+            const newScrollHeight = messagesContainerRef.current.scrollHeight;
+            const heightDifference = newScrollHeight - scrollHeightBefore;
+            messagesContainerRef.current.scrollTop = scrollTopBefore + heightDifference;
+          }
+          setShowLoadMoreButton(false);
+        }, 100);
+      } else {
+        setHasMoreMessages(false);
+      }
     } catch (err) {
-      console.error("Error checking for older messages:", err);
+      console.error("Error loading more messages:", err);
+    } finally {
+      setIsLoadingMore(false);
     }
-  }, [messages]);
+  };
 
   // ── Load Initial Messages ───────────────────────────────────────────
-const loadMessages = useCallback(async () => {
-  setIsLoading(true);
-  try {
-    const result = await api.getCombinedMessages(MESSAGES_PER_PAGE);
-    
-    if (result.success && result.messages) {
-      setMessages(result.messages);
-      setTotalMessages(result.count);
+  const loadMessages = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const result = await api.getCombinedMessages(MESSAGES_PER_PAGE);
       
-      // Check if there are more messages
-      if (result.messages.length > 0) {
-        const oldestMessage = result.messages[0];
-        const olderCheck = await api.getCombinedMessages(1, oldestMessage.id);
-        setHasMoreMessages(olderCheck.count > 0);
+      if (result.success && result.messages) {
+        setMessages(result.messages);
+        setTotalMessages(result.count);
+        
+        if (result.messages.length > 0) {
+          const oldestMessage = result.messages[0];
+          const olderCheck = await api.getCombinedMessages(1, oldestMessage.id);
+          setHasMoreMessages(olderCheck.count > 0);
+        } else {
+          setHasMoreMessages(false);
+        }
+        
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+        }, 100);
       } else {
+        console.error("Failed to load messages:", result.error);
+        setMessages([]);
         setHasMoreMessages(false);
       }
-      
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-      }, 100);
-    } else {
-      console.error("Failed to load messages:", result.error);
+    } catch (err) {
+      console.error("Error loading messages:", err);
       setMessages([]);
       setHasMoreMessages(false);
+    } finally {
+      setIsLoading(false);
     }
-  } catch (err) {
-    console.error("Error loading messages:", err);
-    setMessages([]);
-    setHasMoreMessages(false);
-  } finally {
-    setIsLoading(false);
-  }
-}, []);
+  }, []);
 
   // ── User Presence Registration ──────────────────────────────────────
   const registerUser = useCallback(async () => {
@@ -750,11 +716,6 @@ const loadMessages = useCallback(async () => {
     const interval = setInterval(loadOnlineUsers, USER_REFRESH_INTERVAL);
     return () => clearInterval(interval);
   }, [isJoined, loadOnlineUsers]);
-
-  useEffect(() => {
-    if (!isJoined || messages.length === 0) return;
-    checkForOlderMessages();
-  }, [isJoined, messages, checkForOlderMessages]);
 
   useEffect(() => {
     if (!isUserScrolled && messagesEndRef.current && messages.length > 0 && !isLoadingMore) {
@@ -941,44 +902,25 @@ const loadMessages = useCallback(async () => {
     channel.bind("new-message", async (data: any) => {
       console.log("Received new message via Pusher:", data);
       
-      // Check if message already exists
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data.id)) return prev;
-        return prev;
-      });
-      
-      // Fetch image data if it's an image message
       let imageUrl = undefined;
       let imageThumbnail = undefined;
       
       if (data.type === "image" && data.imageId) {
-        console.log("Fetching image for ID:", data.imageId);
         const imageData = await fetchImage(data.imageId);
         if (imageData) {
           imageUrl = imageData.full;
           imageThumbnail = imageData.thumbnail;
-          console.log("Image fetched successfully");
-        } else {
-          console.log("Failed to fetch image");
         }
       }
       
-      // Add the message with image data
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
         
         const newMessage: Message = {
-          id: data.id,
-          text: data.text,
-          username: data.username,
-          timestamp: data.timestamp,
-          userId: data.userId,
-          type: data.type || "text",
-          imageId: data.imageId,
+          ...data,
           status: "delivered" as MessageStatus,
-          reactions: data.reactions || [],
-          imageUrl: imageUrl,
-          imageThumbnail: imageThumbnail,
+          imageUrl,
+          imageThumbnail,
         };
         
         const newMessages = [...prev, newMessage].sort(
@@ -1160,6 +1102,7 @@ const loadMessages = useCallback(async () => {
         <div className="w-full lg:max-w-[70%] h-full min-h-0">
           <div className="bg-white rounded-lg sm:rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
             <div className="flex flex-row h-full min-h-0">
+              {/* Online Users Sidebar */}
               <div className={`fixed lg:relative lg:block lg:w-64 w-64 bg-white border-r z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
                 <div className="p-2 sm:p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600 sticky top-0">
                   <div className="flex items-center justify-between">
@@ -1191,6 +1134,7 @@ const loadMessages = useCallback(async () => {
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
               )}
 
+              {/* Chat Area */}
               <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden">
                 {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
                   <div className="sticky top-0 z-10 p-1 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b flex-shrink-0">
