@@ -1,6 +1,6 @@
 "use client";
 import NextImage from "next/image";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import Pusher from "pusher-js";
 
 // ============================================================
@@ -198,7 +198,263 @@ const api = {
 };
 
 // ============================================================
-// SUB-COMPONENTS (keeping them as before)
+// JOIN SCREEN COMPONENT
+// ============================================================
+function JoinScreen({ 
+  username, 
+  onUsernameChange, 
+  onSubmit 
+}: { 
+  username: string; 
+  onUsernameChange: (value: string) => void; 
+  onSubmit: (e: React.FormEvent) => void;
+}) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full">
+        <div className="text-center mb-6 sm:mb-8">
+          <NextImage src="/next.svg" alt="Logo" width={100} height={25} className="mx-auto dark:invert w-[80px] sm:w-[120px]" />
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mt-4 sm:mt-6">Join the Chat</h2>
+          <p className="text-sm sm:text-base text-gray-600 mt-2">Enter your username to start chatting</p>
+        </div>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => onUsernameChange(e.target.value)}
+              className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+              placeholder="Enter your username"
+              required
+              maxLength={20}
+              autoFocus
+            />
+          </div>
+          <button type="submit" className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm sm:text-base">
+            Join Chat
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CHAT SCREEN COMPONENT
+// ============================================================
+function ChatScreen({
+  messages,
+  inputMessage,
+  setInputMessage,
+  username,
+  onlineUsers,
+  hoveredMessageId,
+  setHoveredMessageId,
+  isMobileMenuOpen,
+  setIsMobileMenuOpen,
+  isUserScrolled,
+  showScrollButton,
+  newMessageCount,
+  showLoadMoreButton,
+  hasMoreMessages,
+  isLoading,
+  isLoadingMore,
+  isUploading,
+  userId,
+  messagesEndRef,
+  messagesContainerRef,
+  fileInputRef,
+  inputRef,
+  onSendMessage,
+  onLoadMoreMessages,
+  onAddReaction,
+  onScrollToBottom,
+  onClearSavedUser,
+  onImageUpload,
+  onPaste,
+  updateUserActivity,
+}: any) {
+  return (
+    <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 overflow-hidden">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b flex-shrink-0">
+        <div className="px-3 sm:px-4 py-2 sm:py-3 flex justify-between items-center w-full lg:max-w-[70%] lg:mx-auto">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <NextImage src="/next.svg" alt="Logo" width={40} height={10} className="sm:w-[60px]" />
+            <h1 className="text-sm sm:text-lg font-semibold text-gray-800">Chat</h1>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <svg className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="hidden sm:flex items-center gap-3">
+              <span className="text-sm text-gray-600">Logged in as:</span>
+              <span className="font-medium text-gray-800 truncate max-w-[150px]">{username}</span>
+              <button onClick={onClearSavedUser} className="text-sm text-red-500 hover:text-red-600">Leave</button>
+            </div>
+            <div className="sm:hidden flex items-center gap-1">
+              <span className="text-xs font-medium text-gray-800 truncate max-w-[100px]">{username}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Chat Container */}
+      <div className="flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden min-h-0">
+        <div className="w-full lg:max-w-[70%] h-full min-h-0">
+          <div className="bg-white rounded-lg sm:rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
+            <div className="flex flex-row h-full min-h-0">
+              {/* Online Users Sidebar */}
+              <div className={`fixed lg:relative lg:block lg:w-64 w-64 bg-white border-r z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
+                <div className="p-2 sm:p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600 sticky top-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <svg className="h-3 w-3 sm:h-4 sm:w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                      <h3 className="font-semibold text-white text-[10px] sm:text-sm">Active ({onlineUsers.length})</h3>
+                    </div>
+                    <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-white hover:text-gray-200">
+                      <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  {onlineUsers.length === 0 ? (
+                    <p className="text-center text-gray-500 py-8 text-[10px] sm:text-sm">No active users</p>
+                  ) : (
+                    onlineUsers.map((user: User) => (
+                      <UserListItem key={user.id} user={user} isCurrentUser={user.id === userId} />
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {isMobileMenuOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
+              )}
+
+              {/* Chat Area */}
+              <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden">
+                {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
+                  <div className="sticky top-0 z-10 p-1 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b flex-shrink-0">
+                    <button onClick={onLoadMoreMessages} disabled={isLoadingMore} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-[10px] sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 shadow-md">
+                      {isLoadingMore ? (
+                        <>
+                          <svg className="animate-spin h-2 w-2 sm:h-4 sm:w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          <span className="hidden sm:inline">Loading older messages...</span>
+                          <span className="sm:hidden">Loading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-2 w-2 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                          <span className="hidden sm:inline">Load older messages</span>
+                          <span className="sm:hidden">Load more</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                
+                {showScrollButton && newMessageCount === 0 && (
+                  <button onClick={onScrollToBottom} className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full p-1 sm:p-2 shadow-lg hover:bg-blue-600 transition-colors z-10">
+                    <svg className="h-3 w-3 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                  </button>
+                )}
+                
+                {newMessageCount > 0 && (
+                  <button onClick={onScrollToBottom} className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full px-2 sm:px-4 py-1 sm:py-2 shadow-lg hover:bg-blue-600 transition-colors z-10 text-[10px] sm:text-sm flex items-center gap-1 sm:gap-2">
+                    <svg className="h-2 w-2 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    {newMessageCount}
+                  </button>
+                )}
+                
+                <div 
+                  ref={messagesContainerRef} 
+                  onScroll={handleScroll} 
+                  className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3 min-h-0"
+                >
+                  {isLoading && <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">Loading messages...</p>}
+                  {!isLoading && messages.length === 0 && <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">No messages yet. Start the conversation!</p>}
+                  {messages.map((message: Message) => (
+                    <div key={message.id} id={`msg-${message.id}`}>
+                      <MessageBubble
+                        message={message}
+                        currentUserId={userId}
+                        isHovered={hoveredMessageId === message.id}
+                        onMouseEnter={() => setHoveredMessageId(message.id)}
+                        onMouseLeave={() => setTimeout(() => setHoveredMessageId(null), 200)}
+                        onReact={(type) => onAddReaction(message.id, type)}
+                      />
+                    </div>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input Area */}
+                <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
+                  <form onSubmit={onSendMessage} className="space-y-2">
+                    <div className="flex gap-1 sm:gap-2">
+                      <button type="button" onClick={onImageUpload} disabled={isUploading} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" title="Send image (max 2MB) - You can also paste images">
+                        {isUploading ? (
+                          <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        ) : (
+                          <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </button>
+                      <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) onImageUpload(file);
+                      }} className="hidden" />
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={inputMessage}
+                        onChange={(e) => setInputMessage(e.target.value)}
+                        onFocus={updateUserActivity}
+                        onClick={updateUserActivity}
+                        onPaste={onPaste}
+                        placeholder="Type a message or paste an image..."
+                        className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0"
+                        maxLength={500}
+                      />
+                      <button type="submit" className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0">Send</button>
+                    </div>
+                    <div className="text-[8px] sm:text-xs text-gray-500 px-1">
+                      📷 Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB, JPEG/PNG/GIF/WEBP)
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// SUB-COMPONENTS
 // ============================================================
 function StatusIcon({ status }: { status: MessageStatus }) {
   const configs = {
@@ -1036,233 +1292,58 @@ export default function Home() {
     window.location.reload();
   };
 
-  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newUsername = e.target.value;
-    setUsername(newUsername);
-    usernameRef.current = newUsername;
-  };
-
-  const handleMouseEnter = (messageId: string) => {
-    clearTimeout(hoverTimeoutRef.current);
-    setHoveredMessageId(messageId);
-    updateUserActivity();
-  };
-
-  const handleMouseLeave = () => {
-    hoverTimeoutRef.current = setTimeout(() => setHoveredMessageId(null), 200);
+  const handleUsernameChange = (value: string) => {
+    setUsername(value);
+    usernameRef.current = value;
   };
 
   const handleImageButtonClick = () => {
     fileInputRef.current?.click();
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleImageUpload(file);
-    }
-  };
-
-  // ── Join Screen ─────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────
   if (!isJoined) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full">
-          <div className="text-center mb-6 sm:mb-8">
-            <NextImage src="/next.svg" alt="Logo" width={100} height={25} className="mx-auto dark:invert w-[80px] sm:w-[120px]" />
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mt-4 sm:mt-6">Join the Chat</h2>
-            <p className="text-sm sm:text-base text-gray-600 mt-2">Enter your username to start chatting</p>
-          </div>
-          <form onSubmit={joinChat} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={handleUsernameChange}
-                className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                placeholder="Enter your username"
-                required
-                maxLength={20}
-                autoFocus
-              />
-            </div>
-            <button type="submit" className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm sm:text-base">
-              Join Chat
-            </button>
-          </form>
-        </div>
-      </div>
+      <JoinScreen
+        username={username}
+        onUsernameChange={handleUsernameChange}
+        onSubmit={joinChat}
+      />
     );
   }
 
-  // ── Chat Screen ─────────────────────────────────────────────────────
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 overflow-hidden">
-      <div className="bg-white shadow-sm border-b flex-shrink-0">
-        <div className="px-3 sm:px-4 py-2 sm:py-3 flex justify-between items-center w-full lg:max-w-[70%] lg:mx-auto">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <NextImage src="/next.svg" alt="Logo" width={40} height={10} className="sm:w-[60px]" />
-            <h1 className="text-sm sm:text-lg font-semibold text-gray-800">Chat</h1>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors">
-              <svg className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <div className="hidden sm:flex items-center gap-3">
-              <span className="text-sm text-gray-600">Logged in as:</span>
-              <span className="font-medium text-gray-800 truncate max-w-[150px]">{username}</span>
-              <button onClick={clearSavedUser} className="text-sm text-red-500 hover:text-red-600">Leave</button>
-            </div>
-            <div className="sm:hidden flex items-center gap-1">
-              <span className="text-xs font-medium text-gray-800 truncate max-w-[100px]">{username}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden min-h-0">
-        <div className="w-full lg:max-w-[70%] h-full min-h-0">
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
-            <div className="flex flex-row h-full min-h-0">
-              <div className={`fixed lg:relative lg:block lg:w-64 w-64 bg-white border-r z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
-                <div className="p-2 sm:p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600 sticky top-0">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <svg className="h-3 w-3 sm:h-4 sm:w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
-                      <h3 className="font-semibold text-white text-[10px] sm:text-sm">Active ({onlineUsers.length})</h3>
-                    </div>
-                    <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-white hover:text-gray-200">
-                      <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  {onlineUsers.length === 0 ? (
-                    <p className="text-center text-gray-500 py-8 text-[10px] sm:text-sm">No active users</p>
-                  ) : (
-                    onlineUsers.map((user) => (
-                      <UserListItem key={user.id} user={user} isCurrentUser={user.id === userIdRef.current} />
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {isMobileMenuOpen && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
-              )}
-
-              <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden">
-                {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
-                  <div className="sticky top-0 z-10 p-1 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b flex-shrink-0">
-                    <button onClick={loadMoreMessages} disabled={isLoadingMore} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-[10px] sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 shadow-md">
-                      {isLoadingMore ? (
-                        <>
-                          <svg className="animate-spin h-2 w-2 sm:h-4 sm:w-4" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          <span className="hidden sm:inline">Loading older messages...</span>
-                          <span className="sm:hidden">Loading...</span>
-                        </>
-                      ) : (
-                        <>
-                          <svg className="h-2 w-2 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                          <span className="hidden sm:inline">Load older messages</span>
-                          <span className="sm:hidden">Load more</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-                
-                {showScrollButton && newMessageCount === 0 && (
-                  <button onClick={scrollToBottom} className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full p-1 sm:p-2 shadow-lg hover:bg-blue-600 transition-colors z-10">
-                    <svg className="h-3 w-3 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                    </svg>
-                  </button>
-                )}
-                
-                {newMessageCount > 0 && (
-                  <button onClick={scrollToBottom} className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full px-2 sm:px-4 py-1 sm:py-2 shadow-lg hover:bg-blue-600 transition-colors z-10 text-[10px] sm:text-sm flex items-center gap-1 sm:gap-2">
-                    <svg className="h-2 w-2 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                    </svg>
-                    {newMessageCount}
-                  </button>
-                )}
-                
-                <div 
-                  ref={messagesContainerRef} 
-                  onScroll={handleScroll} 
-                  className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3 min-h-0"
-                >
-                  {isLoading && <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">Loading messages...</p>}
-                  {!isLoading && messages.length === 0 && <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">No messages yet. Start the conversation!</p>}
-                  {messages.map((message) => (
-                    <div key={message.id} id={`msg-${message.id}`}>
-                      <MessageBubble
-                        message={message}
-                        currentUserId={userIdRef.current}
-                        isHovered={hoveredMessageId === message.id}
-                        onMouseEnter={() => handleMouseEnter(message.id)}
-                        onMouseLeave={handleMouseLeave}
-                        onReact={(type) => addReaction(message.id, type)}
-                      />
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
-                  <form onSubmit={sendMessage} className="space-y-2">
-                    <div className="flex gap-1 sm:gap-2">
-                      <button type="button" onClick={handleImageButtonClick} disabled={isUploading} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" title="Send image (max 2MB) - You can also paste images">
-                        {isUploading ? (
-                          <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                        ) : (
-                          <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                        )}
-                      </button>
-                      <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={handleFileSelect} className="hidden" />
-                      <input
-                        ref={inputRef}
-                        type="text"
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onFocus={updateUserActivity}
-                        onClick={updateUserActivity}
-                        onPaste={handlePaste}
-                        placeholder="Type a message or paste an image..."
-                        className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0"
-                        maxLength={500}
-                      />
-                      <button type="submit" className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0">Send</button>
-                    </div>
-                    <div className="text-[8px] sm:text-xs text-gray-500 px-1">
-                      📷 Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB, JPEG/PNG/GIF/WEBP)
-                    </div>
-                  </form>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <ChatScreen
+      messages={messages}
+      inputMessage={inputMessage}
+      setInputMessage={setInputMessage}
+      username={username}
+      onlineUsers={onlineUsers}
+      hoveredMessageId={hoveredMessageId}
+      setHoveredMessageId={setHoveredMessageId}
+      isMobileMenuOpen={isMobileMenuOpen}
+      setIsMobileMenuOpen={setIsMobileMenuOpen}
+      isUserScrolled={isUserScrolled}
+      showScrollButton={showScrollButton}
+      newMessageCount={newMessageCount}
+      showLoadMoreButton={showLoadMoreButton}
+      hasMoreMessages={hasMoreMessages}
+      isLoading={isLoading}
+      isLoadingMore={isLoadingMore}
+      isUploading={isUploading}
+      userId={userIdRef.current}
+      messagesEndRef={messagesEndRef}
+      messagesContainerRef={messagesContainerRef}
+      fileInputRef={fileInputRef}
+      inputRef={inputRef}
+      onSendMessage={sendMessage}
+      onLoadMoreMessages={loadMoreMessages}
+      onAddReaction={addReaction}
+      onScrollToBottom={scrollToBottom}
+      onClearSavedUser={clearSavedUser}
+      onImageUpload={handleImageButtonClick}
+      onPaste={handlePaste}
+      updateUserActivity={updateUserActivity}
+    />
   );
 }
