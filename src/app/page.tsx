@@ -76,11 +76,12 @@ const updateTabTitle = (count: number) => {
 
 // Also update favicon badge (optional - for browsers that support it)
 const updateFaviconBadge = (count: number) => {
-  // This is optional and works in some browsers
-  if ('setAppBadge' in navigator && count > 0) {
-    (navigator as any).setAppBadge(count);
-  } else if ('clearAppBadge' in navigator && count === 0) {
-    (navigator as any).clearAppBadge();
+  if (typeof navigator !== 'undefined') {
+    if ('setAppBadge' in navigator && count > 0) {
+      (navigator as any).setAppBadge(count);
+    } else if ('clearAppBadge' in navigator && count === 0) {
+      (navigator as any).clearAppBadge();
+    }
   }
 };
 
@@ -567,13 +568,264 @@ function ChatScreen({
 }
 
 // ============================================================
-// SUB-COMPONENTS (StatusIcon, ReactionPicker, ReactionDisplay, MessageBubble, UserListItem)
-// These remain exactly the same as in your original code
+// SUB-COMPONENTS
 // ============================================================
-// ... (all sub-components remain unchanged from your original code)
+function StatusIcon({ status }: { status: MessageStatus }) {
+  const configs = {
+    sending: {
+      color: "text-gray-500",
+      label: "Sending...",
+      icon: (
+        <svg className="animate-spin h-2 w-2 sm:h-3 sm:w-3" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      ),
+    },
+    sent: {
+      color: "text-blue-500",
+      label: "Sent",
+      icon: (
+        <svg className="h-2 w-2 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      ),
+    },
+    delivered: {
+      color: "text-green-500",
+      label: "Delivered",
+      icon: (
+        <svg className="h-2 w-2 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+    error: {
+      color: "text-red-500",
+      label: "Failed",
+      icon: (
+        <svg className="h-2 w-2 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+  };
+  const { color, label, icon } = configs[status];
+  return (
+    <div className={`flex items-center gap-0.5 text-[8px] sm:text-xs ${color}`}>
+      {icon}
+      <span className="hidden sm:inline">{label}</span>
+      <span className="sm:hidden">{label === "Sending..." ? "..." : label.charAt(0)}</span>
+    </div>
+  );
+}
 
-// Note: The sub-components (StatusIcon, ReactionPicker, ReactionDisplay, MessageBubble, UserListItem)
-// are omitted here for brevity but should be included exactly as in your original code.
+function ReactionPicker({
+  reactions,
+  userId,
+  onReact,
+}: {
+  reactions?: Reaction[];
+  userId: string;
+  onReact: (type: ReactionType) => void;
+}) {
+  return (
+    <div className="bg-white rounded-lg shadow-lg border p-0.5 sm:p-1 flex gap-0 z-20">
+      {REACTIONS.map((reaction) => {
+        const isActive = sanitizeReactions(reactions || []).some(
+          (r) => r.userId === userId && r.type === reaction
+        );
+        return (
+          <button
+            key={reaction}
+            onClick={() => onReact(reaction)}
+            className={`hover:bg-gray-100 p-0.5 sm:p-1 rounded transition-colors text-xs sm:text-base ${
+              isActive ? "bg-blue-100" : ""
+            }`}
+          >
+            {reaction}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReactionDisplay({
+  reactions,
+  userId,
+}: {
+  reactions?: Reaction[];
+  userId: string;
+}) {
+  const counts = getReactionCounts(reactions);
+  const unique = getUniqueReactions(reactions);
+  if (unique.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-0.5 justify-end">
+      {unique.map((reaction, idx) => {
+        const isActive = sanitizeReactions(reactions || []).some(
+          (r) => r.userId === userId && r.type === reaction.type
+        );
+        return (
+          <div
+            key={idx}
+            className={`inline-flex items-center gap-0.5 bg-white border rounded-full px-[2px] py-[1px] sm:px-1 sm:py-0.5 text-[8px] sm:text-xs shadow-md ${
+              isActive ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white"
+            }`}
+          >
+            <span className="text-[10px] sm:text-sm">{reaction.type}</span>
+            <span className="text-[8px] sm:text-xs text-gray-600">{counts[reaction.type]}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MessageBubble({
+  message,
+  currentUserId,
+  isHovered,
+  onMouseEnter,
+  onMouseLeave,
+  onReact,
+}: {
+  message: Message;
+  currentUserId: string;
+  isHovered: boolean;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+  onReact: (type: ReactionType) => void;
+}) {
+  const isOwn = message.userId === currentUserId;
+  const uniqueReactions = getUniqueReactions(message.reactions);
+  const hasReactions = uniqueReactions.length > 0;
+  const isImage = message.type === "image";
+  const [imageLoaded, setImageLoaded] = useState(false);
+  
+  return (
+    <div className={`flex ${isOwn ? "justify-end" : "justify-start"} ${hasReactions ? 'mb-7' : 'mb-3'}`}>
+      <div
+        className={`relative max-w-[85%] sm:max-w-[70%] md:max-w-[60%] min-w-[40px] ${isOwn ? 'mr-2' : 'ml-2'}`}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        {isHovered && (
+          <div className={`absolute -top-8 ${isOwn ? "right-0" : "left-0"} z-10`}>
+            <ReactionPicker
+              reactions={message.reactions}
+              userId={currentUserId}
+              onReact={onReact}
+            />
+          </div>
+        )}
+        <div
+          className={`rounded-2xl p-2.5 sm:p-3 ${
+            isOwn 
+              ? "bg-blue-500 text-white shadow-md" 
+              : "bg-gray-100 text-gray-800 shadow-sm"
+          } overflow-hidden`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`font-semibold text-xs sm:text-sm truncate max-w-[150px] ${isOwn ? 'text-white' : 'text-gray-700'}`}>
+              {message.username}
+            </span>
+            <span className={`text-[10px] sm:text-xs ${isOwn ? 'text-blue-100' : 'text-gray-500'} flex-shrink-0`}>
+              {formatTime(message.timestamp)}
+            </span>
+          </div>
+          
+          {isImage && message.imageUrl ? (
+            <div className="relative group">
+              {message.imageThumbnail && !imageLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg">
+                  <div className="animate-pulse w-full h-full flex items-center justify-center">
+                    <img
+                      src={message.imageThumbnail}
+                      alt="Loading thumbnail"
+                      className="max-w-full max-h-[200px] rounded-lg blur-sm"
+                      style={{ maxWidth: '100%', height: 'auto' }}
+                    />
+                  </div>
+                </div>
+              )}
+              <img
+                src={message.imageUrl}
+                alt="Shared image"
+                className="max-w-full max-h-[300px] rounded-lg cursor-pointer"
+                onClick={() => window.open(message.imageUrl, '_blank')}
+                onLoad={() => setImageLoaded(true)}
+                style={{ maxWidth: '100%', height: 'auto' }}
+              />
+            </div>
+          ) : (
+            <p className="break-words whitespace-pre-wrap text-sm sm:text-base overflow-hidden">
+              {message.text}
+            </p>
+          )}
+          
+          {isOwn && message.status && (
+            <div className="mt-1 flex justify-end">
+              <StatusIcon status={message.status} />
+            </div>
+          )}
+        </div>
+        {hasReactions && (
+          <div className={`absolute -bottom-4 ${isOwn ? "right-0" : "left-0"} z-5`}>
+            <div className="translate-y-2">
+              <ReactionDisplay
+                reactions={message.reactions}
+                userId={currentUserId}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UserListItem({
+  user,
+  isCurrentUser,
+}: {
+  user: User;
+  isCurrentUser: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 p-3 hover:bg-gray-50 transition-all cursor-pointer ${
+        isCurrentUser ? "bg-blue-50" : ""
+      }`}
+    >
+      <div className="relative flex-shrink-0">
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shadow-md ${
+            isCurrentUser
+              ? "bg-green-500"
+              : "bg-blue-500"
+          }`}
+        >
+          {user.username?.charAt(0).toUpperCase()}
+        </div>
+        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white animate-pulse" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-800 truncate">
+          {user.username}
+          {isCurrentUser && (
+            <span className="ml-2 text-xs text-green-600 font-normal">(You)</span>
+          )}
+        </p>
+        <p className="text-xs text-gray-500 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+          Active now
+        </p>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================
 // MAIN COMPONENT
@@ -1086,9 +1338,10 @@ export default function Home() {
         );
         
         if (isUserScrolled) {
-          setNewMessageCount(prev => prev + 1);
-          updateTabTitle(prev + 1);
-          updateFaviconBadge(prev + 1);
+          const newCount = newMessageCount + 1;
+          setNewMessageCount(newCount);
+          updateTabTitle(newCount);
+          updateFaviconBadge(newCount);
         } else {
           setTimeout(() => {
             messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1121,7 +1374,7 @@ export default function Home() {
       channel.unsubscribe();
       pusher.disconnect();
     };
-  }, [isJoined, isUserScrolled]);
+  }, [isJoined, isUserScrolled, newMessageCount]);
 
   // ── Reactions ───────────────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
