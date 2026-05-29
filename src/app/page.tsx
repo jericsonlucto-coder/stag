@@ -323,204 +323,204 @@ function ChatScreen({
         </div>
       </div>
 
-      {/* Chat Container */}
+      {/* Main Content Container with Gap and Centering */}
       <div className="flex-1 flex items-center justify-center p-4 overflow-hidden min-h-0">
-        <div className="w-full lg:max-w-[90%] xl:max-w-[80%] h-full min-h-0">
-          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden h-full flex flex-col">
-            <div className="flex flex-row h-full min-h-0">
-              {/* Online Users Sidebar */}
-              <div className={`fixed lg:relative lg:block lg:w-72 w-72 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 shadow-xl ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
-                <div className="p-4 border-b bg-blue-500 sticky top-0">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                        <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
-                      </div>
-                      <h3 className="font-semibold text-white text-sm">Active Users</h3>
-                      <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full">{onlineUsers.length}</span>
-                    </div>
-                    <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-white hover:text-gray-200">
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+        <div className="w-full lg:max-w-[90%] xl:max-w-[80%] h-full flex gap-4">
+          
+          {/* Online Users Sidebar - Separate Container */}
+          <div className={`lg:flex lg:w-72 bg-white rounded-2xl shadow-xl flex-shrink-0 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+            isMobileMenuOpen ? 'fixed inset-y-0 left-0 z-50 w-72 translate-x-0' : 'hidden lg:flex'
+          }`}>
+            <div className="p-4 bg-gradient-to-r from-blue-500 to-indigo-600">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                    <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
                   </div>
+                  <h3 className="font-semibold text-white text-sm">Active Users</h3>
+                  <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full">{onlineUsers.length}</span>
                 </div>
-                <div className="divide-y divide-gray-100">
-                  {onlineUsers.length === 0 ? (
-                    <div className="text-center text-gray-500 py-12">
-                      <svg className="h-12 w-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
-                      <p className="text-sm">No active users</p>
-                    </div>
-                  ) : (
-                    onlineUsers.map((user: User) => (
-                      <UserListItem key={user.id} user={user} isCurrentUser={user.id === userId} />
-                    ))
-                  )}
-                </div>
+                <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-white hover:text-gray-200">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-
-              {isMobileMenuOpen && (
-                <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {onlineUsers.length === 0 ? (
+                <div className="text-center text-gray-500 py-12">
+                  <svg className="h-12 w-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  <p className="text-sm">No active users</p>
+                </div>
+              ) : (
+                onlineUsers.map((user: User) => (
+                  <UserListItem key={user.id} user={user} isCurrentUser={user.id === userId} />
+                ))
               )}
+            </div>
+          </div>
 
-              {/* Chat Area */}
-              <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden">
-                {/* Load More Button */}
-                {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
-                  <div className="sticky top-0 z-10 p-3 flex justify-center bg-white/95 backdrop-blur-sm border-b border-gray-200 flex-shrink-0">
-                    <button 
-                      onClick={onLoadMoreMessages} 
-                      disabled={isLoadingMore} 
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm transition-all flex items-center gap-2 shadow-md"
-                    >
-                      {isLoadingMore ? (
-                        <>
-                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          <span>Loading older messages...</span>
-                        </>
-                      ) : (
-                        <>
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                          <span>Load older messages</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-                
-                {/* Scroll to Bottom Button */}
-                {showScrollButton && newMessageCount === 0 && (
-                  <button 
-                    onClick={onScrollToBottom} 
-                    className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full p-2 shadow-lg hover:bg-blue-600 transition-all z-10"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                    </svg>
-                  </button>
-                )}
-                
-                {/* New Message Count Button */}
-                {newMessageCount > 0 && (
-                  <button 
-                    onClick={onScrollToBottom} 
-                    className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full px-3 py-2 shadow-lg hover:bg-blue-600 transition-all z-10 text-sm flex items-center gap-2"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                    </svg>
-                    {newMessageCount} new
-                  </button>
-                )}
-                
-                {/* Messages Container */}
-                <div 
-                  ref={messagesContainerRef} 
-                  onScroll={onScroll} 
-                  className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0"
+          {/* Overlay for mobile sidebar */}
+          {isMobileMenuOpen && (
+            <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
+          )}
+
+          {/* Chat Area - Separate Container with Gap */}
+          <div className="flex-1 bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden">
+            {/* Load More Button */}
+            {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
+              <div className="sticky top-0 z-10 p-3 flex justify-center bg-white/95 backdrop-blur-sm border-b border-gray-200 flex-shrink-0">
+                <button 
+                  onClick={onLoadMoreMessages} 
+                  disabled={isLoadingMore} 
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm transition-all flex items-center gap-2 shadow-md"
                 >
-                  {isLoading && (
-                    <div className="flex justify-center items-center h-full">
-                      <div className="text-center">
-                        <svg className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-3" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        <p className="text-gray-500">Loading messages...</p>
-                      </div>
-                    </div>
+                  {isLoadingMore ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Loading older messages...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                      <span>Load older messages</span>
+                    </>
                   )}
-                  {!isLoading && messages.length === 0 && (
-                    <div className="flex justify-center items-center h-full">
-                      <div className="text-center">
-                        <svg className="h-16 w-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        <p className="text-gray-500 text-lg">No messages yet</p>
-                        <p className="text-gray-400 text-sm">Start the conversation!</p>
-                      </div>
-                    </div>
-                  )}
-                  {messages.map((message: Message) => (
-                    <div key={message.id} id={`msg-${message.id}`}>
-                      <MessageBubble
-                        message={message}
-                        currentUserId={userId}
-                        isHovered={hoveredMessageId === message.id}
-                        onMouseEnter={() => setHoveredMessageId(message.id)}
-                        onMouseLeave={() => setTimeout(() => setHoveredMessageId(null), 200)}
-                        onReact={(type) => onAddReaction(message.id, type)}
-                      />
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {/* Input Area */}
-                <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white">
-                  <form onSubmit={onSendMessage} className="space-y-2">
-                    <div className="flex gap-2">
-                      <button 
-                        type="button" 
-                        onClick={onImageUpload} 
-                        disabled={isUploading} 
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Send image (max 2MB) - You can also paste images"
-                      >
-                        {isUploading ? (
-                          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                        ) : (
-                          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                        )}
-                      </button>
-                      <input 
-                        ref={fileInputRef} 
-                        type="file" 
-                        accept="image/jpeg,image/png,image/gif,image/webp" 
-                        onChange={onFileSelect}
-                        className="hidden" 
-                      />
-                      <input
-                        ref={inputRef}
-                        type="text"
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onFocus={updateUserActivity}
-                        onClick={updateUserActivity}
-                        onPaste={onPaste}
-                        placeholder="Type a message or paste an image..."
-                        className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all bg-white"
-                        maxLength={500}
-                      />
-                      <button 
-                        type="submit" 
-                        className="bg-blue-500 text-white px-5 py-2 rounded-xl hover:bg-blue-600 transition-all font-medium text-sm flex-shrink-0 shadow-md"
-                      >
-                        Send
-                      </button>
-                    </div>
-                    <div className="text-xs text-gray-400 px-1 flex items-center gap-1">
-                      <span>📷</span>
-                      <span>Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB)</span>
-                    </div>
-                  </form>
-                </div>
+                </button>
               </div>
+            )}
+            
+            {/* Scroll to Bottom Button */}
+            {showScrollButton && newMessageCount === 0 && (
+              <button 
+                onClick={onScrollToBottom} 
+                className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full p-2 shadow-lg hover:bg-blue-600 transition-all z-10"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+              </button>
+            )}
+            
+            {/* New Message Count Button */}
+            {newMessageCount > 0 && (
+              <button 
+                onClick={onScrollToBottom} 
+                className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full px-3 py-2 shadow-lg hover:bg-blue-600 transition-all z-10 text-sm flex items-center gap-2"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+                {newMessageCount} new
+              </button>
+            )}
+            
+            {/* Messages Container */}
+            <div 
+              ref={messagesContainerRef} 
+              onScroll={onScroll} 
+              className="flex-1 overflow-y-auto p-4 space-y-3"
+            >
+              {isLoading && (
+                <div className="flex justify-center items-center h-full">
+                  <div className="text-center">
+                    <svg className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-3" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <p className="text-gray-500">Loading messages...</p>
+                  </div>
+                </div>
+              )}
+              {!isLoading && messages.length === 0 && (
+                <div className="flex justify-center items-center h-full">
+                  <div className="text-center">
+                    <svg className="h-16 w-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <p className="text-gray-500 text-lg">No messages yet</p>
+                    <p className="text-gray-400 text-sm">Start the conversation!</p>
+                  </div>
+                </div>
+              )}
+              {messages.map((message: Message) => (
+                <div key={message.id} id={`msg-${message.id}`}>
+                  <MessageBubble
+                    message={message}
+                    currentUserId={userId}
+                    isHovered={hoveredMessageId === message.id}
+                    onMouseEnter={() => setHoveredMessageId(message.id)}
+                    onMouseLeave={() => setTimeout(() => setHoveredMessageId(null), 200)}
+                    onReact={(type) => onAddReaction(message.id, type)}
+                  />
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input Area */}
+            <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white">
+              <form onSubmit={onSendMessage} className="space-y-2">
+                <div className="flex gap-2">
+                  <button 
+                    type="button" 
+                    onClick={onImageUpload} 
+                    disabled={isUploading} 
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl transition-all flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Send image (max 2MB) - You can also paste images"
+                  >
+                    {isUploading ? (
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    ) : (
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                  <input 
+                    ref={fileInputRef} 
+                    type="file" 
+                    accept="image/jpeg,image/png,image/gif,image/webp" 
+                    onChange={onFileSelect}
+                    className="hidden" 
+                  />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    onFocus={updateUserActivity}
+                    onClick={updateUserActivity}
+                    onPaste={onPaste}
+                    placeholder="Type a message or paste an image..."
+                    className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all bg-white"
+                    maxLength={500}
+                  />
+                  <button 
+                    type="submit" 
+                    className="bg-blue-500 text-white px-5 py-2 rounded-xl hover:bg-blue-600 transition-all font-medium text-sm flex-shrink-0 shadow-md"
+                  >
+                    Send
+                  </button>
+                </div>
+                <div className="text-xs text-gray-400 px-1 flex items-center gap-1">
+                  <span>📷</span>
+                  <span>Click the camera icon or paste an image (Ctrl+V / Cmd+V) to share (max 2MB)</span>
+                </div>
+              </form>
             </div>
           </div>
         </div>
