@@ -6,6 +6,13 @@ interface ImageUploadResult {
   error: string | null;
 }
 
+interface UploadResponse {
+  success: boolean;
+  messageId: string;
+  imageUrl: string;
+  error?: string;
+}
+
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 
 export function useImageUpload(): ImageUploadResult {
@@ -35,7 +42,7 @@ export function useImageUpload(): ImageUploadResult {
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await response.json() as UploadResponse;
 
       if (!response.ok) {
         throw new Error(data.error || "Failed to upload image");
