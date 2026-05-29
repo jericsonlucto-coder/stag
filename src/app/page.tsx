@@ -208,6 +208,14 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId, reaction }),
     }),
+   getCombinedMessages: async (limit?: number, before?: string) => {
+    let url = `/api/get-messages?`;
+    if (limit) url += `limit=${limit}`;
+    if (before) url += `&before=${before}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    return data;
+  },
 };
 
 // ============================================================
@@ -659,35 +667,19 @@ export default function Home() {
 
   // ── Load Initial Messages ───────────────────────────────────────────
   const loadMessages = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const totalCount = await api.getMessagesCount();
-      setTotalMessages(totalCount);
-      const res = await api.getMessages(MESSAGES_PER_PAGE);
-      const data: Record<string, any> = await res.json();
-      const loaded: Message[] = Object.entries(data || {})
-        .filter(([, msg]) => msg?.text && msg?.username)
-        .map(([key, msg]) => ({
-          id: key,
-          text: msg.text,
-          username: msg.username,
-          timestamp: msg.timestamp || Date.now(),
-          userId: msg.userId || "",
-          status: "delivered" as MessageStatus,
-          reactions: sanitizeReactions(msg.reactions || []),
-          type: msg.type || "text",
-          imageId: msg.imageId,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
+  setIsLoading(true);
+  try {
+    const result = await api.getCombinedMessages(MESSAGES_PER_PAGE);
+    
+    if (result.success) {
+      setMessages(result.messages);
+      setTotalMessages(result.count);
       
-      const enrichedMessages = await enrichMessagesWithImages(loaded);
-      setMessages(enrichedMessages);
-      
-      if (loaded.length > 0) {
-        const oldestMessageId = loaded[0].id;
-        const olderCheck = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
-        const olderData = await olderCheck.json();
-        setHasMoreMessages(Object.keys(olderData || {}).length > 0);
+      // Check if there are more messages
+      if (result.messages.length > 0) {
+        const oldestMessage = result.messages[0];
+        const olderCheck = await api.getCombinedMessages(1, oldestMessage.id);
+        setHasMoreMessages(olderCheck.count > 0);
       } else {
         setHasMoreMessages(false);
       }
@@ -695,12 +687,13 @@ export default function Home() {
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
       }, 100);
-    } catch (err) {
-      console.error("Error loading messages:", err);
-    } finally {
-      setIsLoading(false);
     }
-  }, []);
+  } catch (err) {
+    console.error("Error loading messages:", err);
+  } finally {
+    setIsLoading(false);
+  }
+}, []);
 
   // ── User Presence Registration ──────────────────────────────────────
   const registerUser = useCallback(async () => {
