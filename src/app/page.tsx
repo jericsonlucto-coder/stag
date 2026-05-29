@@ -49,6 +49,24 @@ interface FirebaseMessage {
   imageUrl?: string;
 }
 
+interface SendImageResponse {
+  success: boolean;
+  message: {
+    id: string;
+    imageUrl: string;
+    imageStoragePath: string;
+    text: string;
+    username: string;
+    timestamp: number;
+    userId: string;
+    type?: string;
+  };
+  firebaseId?: string;
+  warning?: string;
+  error?: string;
+  details?: string;
+}
+
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -682,46 +700,45 @@ export default function Home() {
   }, []);
 
   // ── Send Image Function ───────────────────────────────────
-const sendImage = async (base64Image: string, file: File) => {
-  if (!username) return;
-  
-  setIsSendingImage(true);
-  updateUserActivity();
-  
-  const messageId = generateId();
-  const newMessage: Message = {
-    id: messageId,
-    text: "",
-    imageUrl: "",
-    username,
-    timestamp: Date.now(),
-    userId: userIdRef.current,
-    status: "sending",
-    reactions: [],
-    type: "image",
-  };
-  
-  // Add temporary message
-  setMessages((prev) => [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp));
-  scrollToBottom();
-  
-  try {
-    const response = await fetch("/api/send-image", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        imageBase64: base64Image,
-        text: "",
-        username,
-        userId: userIdRef.current,
-        timestamp: Date.now(),
-      }),
-    });
+  const sendImage = async (base64Image: string, file: File) => {
+    if (!username) return;
     
-    if (response.ok) {
-      const result = await response.json();
+    setIsSendingImage(true);
+    updateUserActivity();
+    
+    const messageId = generateId();
+    const newMessage: Message = {
+      id: messageId,
+      text: "",
+      imageUrl: "",
+      username,
+      timestamp: Date.now(),
+      userId: userIdRef.current,
+      status: "sending",
+      reactions: [],
+      type: "image",
+    };
+    
+    // Add temporary message
+    setMessages((prev) => [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp));
+    scrollToBottom();
+    
+    try {
+      const response = await fetch("/api/send-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64: base64Image,
+          text: "",
+          username,
+          userId: userIdRef.current,
+          timestamp: Date.now(),
+        }),
+      });
       
-      if (result.success && result.message) {
+      const result: SendImageResponse = await response.json();
+      
+      if (response.ok && result.success && result.message) {
         // Success - update message with actual data
         setMessages((prev) =>
           prev.map((msg) =>
@@ -745,34 +762,24 @@ const sendImage = async (base64Image: string, file: File) => {
         }, STATUS_CLEAR_DELAY);
       } else {
         // API returned error
-        console.error("API returned error:", result.error);
+        console.error("API returned error:", result.error || result.details);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
           )
         );
       }
-    } else {
-      // HTTP error
-      const errorData = await response.json();
-      console.error("HTTP error:", errorData);
+    } catch (error) {
+      console.error("Network error sending image:", error);
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
         )
       );
+    } finally {
+      setIsSendingImage(false);
     }
-  } catch (error) {
-    console.error("Network error sending image:", error);
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId ? { ...msg, status: "error" as MessageStatus } : msg
-      )
-    );
-  } finally {
-    setIsSendingImage(false);
-  }
-};
+  };
 
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => {
