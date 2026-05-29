@@ -152,7 +152,7 @@ const api = {
       return 0;
     }
   },
-  getAllMessages: async () => {
+  getAllMessages: async (): Promise<Record<string, any>> => {
     try {
       const res = await fetch(`${FIREBASE_DB_URL}/messages.json`);
       const data = await res.json();
@@ -162,7 +162,7 @@ const api = {
       return {};
     }
   },
-  getAllImages: async () => {
+  getAllImages: async (): Promise<Record<string, any>> => {
     try {
       const res = await fetch(`${FIREBASE_DB_URL}/images.json`);
       const data = await res.json();
@@ -207,6 +207,68 @@ const api = {
     }),
 };
 
+// Then update the loadAndCombineMessages function:
+
+const loadAndCombineMessages = useCallback(async (limit?: number, beforeTimestamp?: number): Promise<Message[]> => {
+  try {
+    // Fetch all messages and images
+    const [messagesData, imagesData] = await Promise.all([
+      api.getAllMessages(),
+      api.getAllImages()
+    ]);
+    
+    // Convert messages to array
+    const allMessages: Message[] = [];
+    
+    Object.entries(messagesData).forEach(([id, msg]: [string, any]) => {
+      if (msg?.text && msg?.username) {
+        const message: Message = {
+          id: id,
+          text: msg.text,
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered" as MessageStatus,
+          reactions: sanitizeReactions(msg.reactions || []),
+          type: msg.type || "text",
+          imageId: msg.imageId,
+        };
+        
+        // Attach image data if it's an image message
+        if (message.type === "image" && message.imageId && imagesData && imagesData[message.imageId]) {
+          const imageData = imagesData[message.imageId];
+          if (imageData && imageData.full && imageData.thumbnail) {
+            message.imageUrl = imageData.full;
+            message.imageThumbnail = imageData.thumbnail;
+          }
+        }
+        
+        allMessages.push(message);
+      }
+    });
+    
+    // Sort by timestamp (newest first for pagination)
+    allMessages.sort((a, b) => b.timestamp - a.timestamp);
+    
+    // Filter by beforeTimestamp if provided
+    let filteredMessages = allMessages;
+    if (beforeTimestamp) {
+      filteredMessages = allMessages.filter(m => m.timestamp < beforeTimestamp);
+    }
+    
+    // Apply limit
+    if (limit && limit > 0) {
+      filteredMessages = filteredMessages.slice(0, limit);
+    }
+    
+    // Return in chronological order (oldest first for display)
+    return filteredMessages.reverse();
+    
+  } catch (err) {
+    console.error("Error loading and combining messages:", err);
+    return [];
+  }
+}, []);
 // ============================================================
 // SUB-COMPONENTS
 // ============================================================
