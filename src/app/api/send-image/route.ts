@@ -10,6 +10,20 @@ interface ImageMessage {
   userId: string;
 }
 
+interface ImgBBResponse {
+  data: {
+    url: string;
+    thumb: string;
+    medium: string;
+    delete_url: string;
+  };
+  success: boolean;
+  status: number;
+  error?: {
+    message: string;
+  };
+}
+
 // Same credentials as your other endpoints
 const PUSHER_APP_ID = "2159204";
 const PUSHER_KEY = "bc4bbe143420c20c0e9d";
@@ -28,17 +42,19 @@ async function uploadToImgBB(base64Image: string): Promise<string> {
   const formData = new FormData();
   formData.append('image', base64Data);
   
-  // Using a demo key - you should register for your own free key at https://api.imgbb.com/
-  // This key is for testing only, please replace with your own
-  const response = await fetch('https://api.imgbb.com/1/upload?key=YOUR_IMGBB_API_KEY', {
+  // You need to replace this with your own API key from https://api.imgbb.com/
+  // For now, let's use a placeholder - you MUST get your own key
+  const IMGBB_API_KEY = "YOUR_IMGBB_API_KEY"; // Replace this with your actual key
+  
+  const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
     method: 'POST',
     body: formData,
   });
   
-  const data = await response.json();
+  const data: ImgBBResponse = await response.json();
   
   if (!data.success) {
-    throw new Error('Image upload failed: ' + data.error?.message);
+    throw new Error('Image upload failed: ' + (data.error?.message || 'Unknown error'));
   }
   
   return data.data.url;
