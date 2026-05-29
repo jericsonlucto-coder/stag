@@ -7,11 +7,7 @@ interface Message {
   timestamp: number;
   userId: string;
   type?: "text" | "image";
-  imageId?: string; // Reference to image instead of full data
-}
-
-interface FirebaseResponse {
-  name: string;
+  imageId?: string;
 }
 
 const PUSHER_APP_ID = "2159204";
@@ -49,9 +45,9 @@ async function getMD5(str: string): Promise<string> {
 export async function POST(request: Request) {
   try {
     const message: Message = await request.json();
-    console.log("Received message:", { id: message.id, type: message.type });
+    console.log("Received message to save:", { id: message.id, type: message.type, imageId: message.imageId });
     
-    // Prepare Firebase data - only store reference, not the actual image
+    // Prepare Firebase data
     const firebaseData: any = {
       text: message.text,
       username: message.username,
@@ -73,13 +69,14 @@ export async function POST(request: Request) {
       body: JSON.stringify(firebaseData),
     });
     
-    const firebaseResult: FirebaseResponse = await firebaseResponse.json();
+    const firebaseResult = await firebaseResponse.json();
+    console.log("Firebase save result:", firebaseResult);
     
     if (!firebaseResponse.ok) {
       return NextResponse.json({ error: "Failed to save to Firebase" }, { status: 500 });
     }
     
-    // Create a small payload for Pusher (without image data)
+    // Create payload for Pusher
     const pusherPayload = {
       name: "new-message",
       channel: "private-chat-channel",
@@ -90,7 +87,7 @@ export async function POST(request: Request) {
         timestamp: message.timestamp,
         userId: message.userId,
         type: message.type || "text",
-        imageId: message.imageId, // Send only the reference
+        imageId: message.imageId,
       })
     };
     
