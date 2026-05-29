@@ -26,9 +26,9 @@ interface Message {
   status?: MessageStatus;
   reactions?: Reaction[];
   type?: MessageType;
-  imageId?: string; // Reference instead of full data
-  imageUrl?: string; // For local display only
-  imageThumbnail?: string; // For local display only
+  imageId?: string;
+  imageUrl?: string;
+  imageThumbnail?: string;
 }
 
 interface User {
@@ -36,18 +36,6 @@ interface User {
   username: string;
   joinedAt: number;
   lastActive: number;
-}
-
-interface FirebaseMessage {
-  text: string;
-  username: string;
-  timestamp: number;
-  userId: string;
-  createdAt: string;
-  reactions?: Reaction[];
-  type?: MessageType;
-  imageUrl?: string;
-  imageThumbnail?: string;
 }
 
 // ============================================================
@@ -60,9 +48,8 @@ const USER_ACTIVE_THRESHOLD = 60000;
 const USER_REFRESH_INTERVAL = 5000;
 const STATUS_CLEAR_DELAY = 2000;
 const MESSAGES_PER_PAGE = 50;
-const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB (reduced for better performance)
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-const MAX_IMAGE_DIMENSION = 600; // Reduced for better performance
 
 // ============================================================
 // UTILITIES
@@ -99,17 +86,6 @@ const getUniqueReactions = (reactions?: Reaction[]): Reaction[] => {
   return Array.from(unique.values());
 };
 
-// Convert file to base64
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
-  });
-};
-
-// Compress image and create thumbnail
 const processImage = async (file: File): Promise<{ full: string; thumbnail: string }> => {
   return new Promise((resolve, reject) => {
     const img = document.createElement('img');
@@ -117,7 +93,6 @@ const processImage = async (file: File): Promise<{ full: string; thumbnail: stri
       const canvas = document.createElement("canvas");
       const thumbCanvas = document.createElement("canvas");
       
-      // Calculate dimensions for full image (max 800px)
       let width = img.width;
       let height = img.height;
       if (width > 800) {
@@ -130,7 +105,6 @@ const processImage = async (file: File): Promise<{ full: string; thumbnail: stri
       ctx?.drawImage(img, 0, 0, width, height);
       const full = canvas.toDataURL("image/jpeg", 0.7);
       
-      // Create thumbnail (max 150px)
       let thumbWidth = img.width;
       let thumbHeight = img.height;
       if (thumbWidth > 150) {
@@ -149,15 +123,34 @@ const processImage = async (file: File): Promise<{ full: string; thumbnail: stri
     img.src = URL.createObjectURL(file);
   });
 };
+
 const fetchImage = async (imageId: string): Promise<{ full: string; thumbnail: string } | null> => {
   try {
     const res = await fetch(`${FIREBASE_DB_URL}/images/${imageId}.json`);
     const data = await res.json();
-    return data;
-  } catch (err) {f
+    if (data && typeof data === 'object' && 'full' in data && 'thumbnail' in data) {
+      return data as { full: string; thumbnail: string };
+    }
+    return null;
+  } catch (err) {
     console.error("Error fetching image:", err);
     return null;
   }
+};
+
+const enrichMessagesWithImages = async (messages: Message[]): Promise<Message[]> => {
+  const enriched = await Promise.all(
+    messages.map(async (msg) => {
+      if (msg.type === "image" && msg.imageId && !msg.imageUrl) {
+        const imageData = await fetchImage(msg.imageId);
+        if (imageData) {
+          return { ...msg, imageUrl: imageData.full, imageThumbnail: imageData.thumbnail };
+        }
+      }
+      return msg;
+    })
+  );
+  return enriched;
 };
 
 // ============================================================
@@ -227,20 +220,8 @@ function StatusIcon({ status }: { status: MessageStatus }) {
       label: "Sending...",
       icon: (
         <svg className="animate-spin h-2 w-2 sm:h-3 sm:w-3" viewBox="0 0 24 24">
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-            fill="none"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-          />
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
         </svg>
       ),
     },
@@ -373,7 +354,6 @@ function MessageBubble({
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        {/* Reaction Picker - Shows on hover at the top of bubble */}
         {isHovered && (
           <div className={`absolute -top-6 sm:-top-8 ${isOwn ? "right-0" : "left-0"} z-10`}>
             <ReactionPicker
@@ -383,7 +363,6 @@ function MessageBubble({
             />
           </div>
         )}
-        {/* Bubble with word wrapping and overflow handling */}
         <div
           className={`rounded-lg p-1.5 sm:p-2.5 ${
             isOwn ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"
@@ -398,7 +377,6 @@ function MessageBubble({
             </span>
           </div>
           
-          {/* Message Content - Text or Image */}
           {isImage && message.imageUrl ? (
             <div className="relative group">
               {message.imageThumbnail && !imageLoaded && (
@@ -436,7 +414,6 @@ function MessageBubble({
             </div>
           )}
         </div>
-        {/* Reactions Display - Positioned below bubble */}
         {hasReactions && (
           <div className={`absolute -bottom-3 ${isOwn ? "right-0" : "left-0"} z-5`}>
             <div className="translate-y-2">
@@ -518,7 +495,7 @@ export default function Home() {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activityTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
-  // ── User Presence Functions (Declared first) ─────────────────────────
+  // ── User Presence Functions ─────────────────────────────────────────
   const updateLastActive = useCallback(async () => {
     if (!isJoined) return;
     try {
@@ -558,32 +535,24 @@ export default function Home() {
     }
   }, []);
 
-  // ── Track user activity ──────────────────────────────────
   const updateUserActivity = useCallback(() => {
     if (!isJoined) return;
-    
     if (activityTimeoutRef.current) {
       clearTimeout(activityTimeoutRef.current);
     }
-    
     updateLastActive();
-    
     activityTimeoutRef.current = setTimeout(() => {}, 120000);
   }, [isJoined, updateLastActive]);
 
-  // ── Track user events for activity ───────────────────────
+  // ── Effects for activity tracking ───────────────────────────────────
   useEffect(() => {
     if (!isJoined) return;
-    
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
     const handleUserActivity = () => updateUserActivity();
-    
     events.forEach(event => {
       window.addEventListener(event, handleUserActivity);
     });
-    
     updateUserActivity();
-    
     return () => {
       events.forEach(event => {
         window.removeEventListener(event, handleUserActivity);
@@ -594,7 +563,6 @@ export default function Home() {
     };
   }, [isJoined, updateUserActivity]);
 
-  // ── Persistence ──────────────────────────────────────────
   useEffect(() => {
     const savedUsername = localStorage.getItem("chat-username");
     const savedUserId = localStorage.getItem("chat-userId");
@@ -605,42 +573,34 @@ export default function Home() {
     }
   }, []);
 
-  // ── Scroll Detection ─────────────────────────────────────
+  // ── Scroll Detection ─────────────────────────────────────────────────
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
-    
     const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
     const isNearTop = scrollTop < 50;
-    
     setIsUserScrolled(!isNearBottom);
     setShowScrollButton(!isNearBottom && scrollHeight > clientHeight);
-    
     if (isNearBottom && newMessageCount > 0) {
       setNewMessageCount(0);
     }
-    
     if (isNearTop && hasMoreMessages && !isLoadingMore && messages.length > 0) {
       setShowLoadMoreButton(true);
     } else if (!isNearTop) {
       setShowLoadMoreButton(false);
     }
-    
     updateUserActivity();
   };
 
-  // ── Load More Messages ───────────────────────────────────
+  // ── Load More Messages ──────────────────────────────────────────────
   const loadMoreMessages = async () => {
     if (isLoadingMore || !hasMoreMessages || messages.length === 0) return;
-    
     setIsLoadingMore(true);
     try {
       const oldestMessage = messages[0];
       if (!oldestMessage) return;
-      
       const res = await api.getMessagesBefore(oldestMessage.id, MESSAGES_PER_PAGE);
-      const data: Record<string, FirebaseMessage> = await res.json();
-      
+      const data: Record<string, any> = await res.json();
       const olderMessages: Message[] = Object.entries(data || {})
         .filter(([, msg]) => msg?.text && msg?.username)
         .map(([key, msg]) => ({
@@ -652,26 +612,20 @@ export default function Home() {
           status: "delivered" as MessageStatus,
           reactions: sanitizeReactions(msg.reactions || []),
           type: msg.type || "text",
-          imageUrl: msg.imageUrl,
-          imageThumbnail: msg.imageThumbnail,
+          imageId: msg.imageId,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
       
-      if (olderMessages.length === 0 || olderMessages.length < MESSAGES_PER_PAGE) {
+      const enrichedOlderMessages = await enrichMessagesWithImages(olderMessages);
+      
+      if (enrichedOlderMessages.length === 0 || enrichedOlderMessages.length < MESSAGES_PER_PAGE) {
         setHasMoreMessages(false);
-      } else {
-        const newTotalCount = messages.length + olderMessages.length;
-        if (newTotalCount >= totalMessages) {
-          setHasMoreMessages(false);
-        }
       }
       
-      if (olderMessages.length > 0) {
+      if (enrichedOlderMessages.length > 0) {
         const scrollHeightBefore = messagesContainerRef.current?.scrollHeight || 0;
         const scrollTopBefore = messagesContainerRef.current?.scrollTop || 0;
-        
-        setMessages(prev => [...olderMessages, ...prev]);
-        
+        setMessages(prev => [...enrichedOlderMessages, ...prev]);
         setTimeout(() => {
           if (messagesContainerRef.current) {
             const newScrollHeight = messagesContainerRef.current.scrollHeight;
@@ -688,66 +642,43 @@ export default function Home() {
     }
   };
 
-  // ── Check if there are older messages ────────────────────
   const checkForOlderMessages = useCallback(async () => {
     if (messages.length === 0) return;
-    
     try {
       const oldestMessageId = messages[0].id;
       const res = await fetch(`${FIREBASE_DB_URL}/messages.json?orderBy="$key"&endBefore="${oldestMessageId}"&limitToLast=1`);
       const data = await res.json();
-      
       setHasMoreMessages(Object.keys(data || {}).length > 0);
     } catch (err) {
       console.error("Error checking for older messages:", err);
     }
   }, [messages]);
 
-  // ── Load Initial Messages ────────────────────────────────
+  // ── Load Initial Messages ───────────────────────────────────────────
   const loadMessages = useCallback(async () => {
     setIsLoading(true);
     try {
       const totalCount = await api.getMessagesCount();
       setTotalMessages(totalCount);
-      
       const res = await api.getMessages(MESSAGES_PER_PAGE);
-      const data: Record<string, FirebaseMessage> = await res.json();
-
-      const enrichMessagesWithImages = async (messages: Message[]): Promise<Message[]> => {
-  const enriched = await Promise.all(
-    messages.map(async (msg) => {
-      if (msg.type === "image" && msg.imageId && !msg.imageUrl) {
-        const imageData = await fetchImage(msg.imageId);
-        if (imageData) {
-          return { ...msg, imageUrl: imageData.full, imageThumbnail: imageData.thumbnail };
-        }
-      }
-      return msg;
-    })
-  );
-  return enriched;
-};
-      
+      const data: Record<string, any> = await res.json();
       const loaded: Message[] = Object.entries(data || {})
-  .filter(([, msg]) => msg?.text && msg?.username)
-  .map(([key, msg]) => ({
-    id: key,
-    text: msg.text,
-    username: msg.username,
-    timestamp: msg.timestamp || Date.now(),
-    userId: msg.userId || "",
-    status: "delivered" as MessageStatus,
-    reactions: sanitizeReactions(msg.reactions || []),
-    type: msg.type || "text",
-    imageId: msg.imageId,
-  }))
-  .sort((a, b) => a.timestamp - b.timestamp);
-
-// Enrich with images
-const enrichedMessages = await enrichMessagesWithImages(loaded);
-setMessages(enrichedMessages);
+        .filter(([, msg]) => msg?.text && msg?.username)
+        .map(([key, msg]) => ({
+          id: key,
+          text: msg.text,
+          username: msg.username,
+          timestamp: msg.timestamp || Date.now(),
+          userId: msg.userId || "",
+          status: "delivered" as MessageStatus,
+          reactions: sanitizeReactions(msg.reactions || []),
+          type: msg.type || "text",
+          imageId: msg.imageId,
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
       
-      setMessages(loaded);
+      const enrichedMessages = await enrichMessagesWithImages(loaded);
+      setMessages(enrichedMessages);
       
       if (loaded.length > 0) {
         const oldestMessageId = loaded[0].id;
@@ -768,7 +699,7 @@ setMessages(enrichedMessages);
     }
   }, []);
 
-  // ── User Presence ─────────────────────────────────────────
+  // ── User Presence Registration ──────────────────────────────────────
   const registerUser = useCallback(async () => {
     try {
       await api.putUser(userIdRef.current, {
@@ -790,7 +721,7 @@ setMessages(enrichedMessages);
     }
   }, []);
 
-  // ── Effects ───────────────────────────────────────────────
+  // ── Main Effects ────────────────────────────────────────────────────
   useEffect(() => {
     if (!isJoined) return;
     registerUser();
@@ -822,139 +753,103 @@ setMessages(enrichedMessages);
     }
   }, [messages, isUserScrolled, isLoadingMore]);
 
-  useEffect(() => {
-    if (!isJoined) return;
-    
-    const handleInputFocus = () => {
-      updateLastActive();
-      updateUserActivity();
-    };
-    
-    const inputElement = document.querySelector('input[type="text"]');
-    if (inputElement) {
-      inputElement.addEventListener('focus', handleInputFocus);
-      inputElement.addEventListener('click', handleInputFocus);
-    }
-    
-    return () => {
-      if (inputElement) {
-        inputElement.removeEventListener('focus', handleInputFocus);
-        inputElement.removeEventListener('click', handleInputFocus);
-      }
-    };
-  }, [isJoined, updateLastActive, updateUserActivity]);
-
-  // ── Image Upload Function ─────────────────────────────────
+  // ── Image Upload Function ───────────────────────────────────────────
   const handleImageUpload = async (file: File) => {
-  if (!file) return;
-  
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    alert("Please upload a valid image (JPEG, PNG, GIF, or WEBP)");
-    return;
-  }
-  
-  if (file.size > MAX_IMAGE_SIZE) {
-    alert("Image must be less than 2MB");
-    return;
-  }
-  
-  setIsUploading(true);
-  updateUserActivity();
-  await updateLastActive();
-  
-  const messageId = generateId();
-  
-  try {
-    // Process image (compress and create thumbnail)
-    const { full, thumbnail } = await processImage(file);
-    
-    // First, upload image to Firebase storage
-    const uploadRes = await fetch("/api/upload-image", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        imageData: { full, thumbnail },
-        messageId: messageId,
-      }),
-    });
-    
-    if (!uploadRes.ok) {
-      throw new Error("Failed to upload image");
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      alert("Please upload a valid image (JPEG, PNG, GIF, or WEBP)");
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      alert("Image must be less than 2MB");
+      return;
     }
     
-    const newMessage: Message = {
-      id: messageId,
-      text: "📷 Image",
-      username,
-      timestamp: Date.now(),
-      userId: userIdRef.current,
-      status: "sending",
-      reactions: [],
-      type: "image",
-      imageId: messageId, // Store reference
-      // Also store locally for immediate display
-      imageUrl: full,
-      imageThumbnail: thumbnail,
-    };
+    setIsUploading(true);
+    updateUserActivity();
+    await updateLastActive();
+    const messageId = generateId();
     
-    const updateStatus = (status: MessageStatus | undefined) =>
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
-      );
-    
-    // Add message locally first
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === messageId)) return prev;
-      return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
-    });
-    
-    // Scroll to bottom
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-    
-    // Send message reference via API
     try {
-      updateStatus("sent");
-      const messageToSend = { ...newMessage };
-      delete (messageToSend as any).imageUrl;
-      delete (messageToSend as any).imageThumbnail;
+      const { full, thumbnail } = await processImage(file);
+      const uploadRes = await fetch("/api/upload-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageData: { full, thumbnail },
+          messageId: messageId,
+        }),
+      });
       
-      const res = await api.sendMessage(messageToSend);
-      if (res.ok) {
-        updateStatus("delivered");
-        setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
-      } else {
-        updateStatus("error");
-        console.error("Failed to send image message:", await res.text());
+      if (!uploadRes.ok) {
+        throw new Error("Failed to upload image");
       }
+      
+      const newMessage: Message = {
+        id: messageId,
+        text: "📷 Image",
+        username,
+        timestamp: Date.now(),
+        userId: userIdRef.current,
+        status: "sending",
+        reactions: [],
+        type: "image",
+        imageId: messageId,
+        imageUrl: full,
+        imageThumbnail: thumbnail,
+      };
+      
+      const updateStatus = (status: MessageStatus | undefined) =>
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === messageId ? { ...msg, status } : msg))
+        );
+      
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === messageId)) return prev;
+        return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+      });
+      
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+      
+      try {
+        updateStatus("sent");
+        const messageToSend = { ...newMessage };
+        delete (messageToSend as any).imageUrl;
+        delete (messageToSend as any).imageThumbnail;
+        const res = await api.sendMessage(messageToSend);
+        if (res.ok) {
+          updateStatus("delivered");
+          setTimeout(() => updateStatus(undefined), STATUS_CLEAR_DELAY);
+        } else {
+          updateStatus("error");
+          console.error("Failed to send image message:", await res.text());
+        }
+      } catch (err) {
+        console.error("Error sending image message:", err);
+        updateStatus("error");
+      }
+      
+      setIsUserScrolled(false);
+      setShowScrollButton(false);
     } catch (err) {
-      console.error("Error sending image message:", err);
-      updateStatus("error");
+      console.error("Error processing image:", err);
+      alert("Failed to process image. Please try again.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
-    
-    setIsUserScrolled(false);
-    setShowScrollButton(false);
-    
-  } catch (err) {
-    console.error("Error processing image:", err);
-    alert("Failed to process image. Please try again.");
-  } finally {
-    setIsUploading(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  }
-};
+  };
 
-  // ── Send Text Message ─────────────────────────────────────
+  // ── Send Text Message ───────────────────────────────────────────────
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !username) return;
-    
     updateUserActivity();
     await updateLastActive();
-    
     const messageId = generateId();
     const newMessage: Message = {
       id: messageId,
@@ -988,7 +883,6 @@ setMessages(enrichedMessages);
       console.error("Error sending message:", err);
       updateStatus("error");
     }
-    
     setIsUserScrolled(false);
     setShowScrollButton(false);
     setTimeout(() => {
@@ -996,60 +890,47 @@ setMessages(enrichedMessages);
     }, 100);
   };
 
-  // ── Pusher ────────────────────────────────────────────────
- useEffect(() => {
-  if (!isJoined) return;
-  
-  const pusher = new Pusher("bc4bbe143420c20c0e9d", {
-    cluster: "ap1",
-    authEndpoint: "/api/pusher-auth",
-  });
-  const channel = pusher.subscribe("private-chat-channel");
-  
-  channel.bind("new-message", async (data: any) => {
-    console.log("Received new message via Pusher:", data);
-    
-    // If it's an image message, fetch the actual image data
-    let imageUrl = undefined;
-    let imageThumbnail = undefined;
-    
-    if (data.type === "image" && data.imageId) {
-      const imageData = await fetchImage(data.imageId);
-      if (imageData) {
-        imageUrl = imageData.full;
-        imageThumbnail = imageData.thumbnail;
-      }
-    }
-    
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === data.id)) return prev;
-      
-      const newMessage: Message = {
-        ...data,
-        status: "delivered" as MessageStatus,
-        imageUrl,
-        imageThumbnail,
-      };
-      
-      const newMessages = [...prev, newMessage].sort(
-        (a, b) => a.timestamp - b.timestamp
-      );
-      
-      if (isUserScrolled) {
-        setNewMessageCount(prev => prev + 1);
-      } else {
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 100);
-      }
-      
-      return newMessages;
+  // ── Pusher Real-time ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isJoined) return;
+    const pusher = new Pusher("bc4bbe143420c20c0e9d", {
+      cluster: "ap1",
+      authEndpoint: "/api/pusher-auth",
     });
-  });
-  
-  channel.bind(
-    "message-reaction",
-    (data: { messageId: string; reaction: Reaction | null }) => {
+    const channel = pusher.subscribe("private-chat-channel");
+    
+    channel.bind("new-message", async (data: any) => {
+      console.log("Received new message via Pusher:", data);
+      let imageUrl = undefined;
+      let imageThumbnail = undefined;
+      if (data.type === "image" && data.imageId) {
+        const imageData = await fetchImage(data.imageId);
+        if (imageData) {
+          imageUrl = imageData.full;
+          imageThumbnail = imageData.thumbnail;
+        }
+      }
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.id)) return prev;
+        const newMessage: Message = {
+          ...data,
+          status: "delivered" as MessageStatus,
+          imageUrl,
+          imageThumbnail,
+        };
+        const newMessages = [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+        if (isUserScrolled) {
+          setNewMessageCount(prev => prev + 1);
+        } else {
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }, 100);
+        }
+        return newMessages;
+      });
+    });
+    
+    channel.bind("message-reaction", (data: { messageId: string; reaction: Reaction | null }) => {
       if (!data.reaction) return;
       setMessages((prev) =>
         prev.map((msg) => {
@@ -1064,17 +945,16 @@ setMessages(enrichedMessages);
           };
         })
       );
-    }
-  );
-  
-  return () => {
-    channel.unbind_all();
-    channel.unsubscribe();
-    pusher.disconnect();
-  };
-}, [isJoined, isUserScrolled]);
+    });
+    
+    return () => {
+      channel.unbind_all();
+      channel.unsubscribe();
+      pusher.disconnect();
+    };
+  }, [isJoined, isUserScrolled]);
 
-  // ── Actions ───────────────────────────────────────────────
+  // ── Reactions ───────────────────────────────────────────────────────
   const addReaction = async (messageId: string, reactionType: ReactionType) => {
     updateUserActivity();
     const message = messages.find((m) => m.id === messageId);
@@ -1083,29 +963,14 @@ setMessages(enrichedMessages);
       (r) => r.userId === userIdRef.current && r.type === reactionType
     );
     const updatedReactions = hasReacted
-      ? cleanReactions.filter(
-          (r) => !(r.userId === userIdRef.current && r.type === reactionType)
-        )
-      : [
-          ...cleanReactions,
-          {
-            type: reactionType,
-            userId: userIdRef.current,
-            username,
-            timestamp: Date.now(),
-          },
-        ];
+      ? cleanReactions.filter((r) => !(r.userId === userIdRef.current && r.type === reactionType))
+      : [...cleanReactions, { type: reactionType, userId: userIdRef.current, username, timestamp: Date.now() }];
     setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg
-      )
+      prev.map((msg) => (msg.id === messageId ? { ...msg, reactions: updatedReactions } : msg))
     );
     try {
       await api.putReactions(messageId, updatedReactions);
-      await api.sendReaction(
-        messageId,
-        hasReacted ? null : updatedReactions[updatedReactions.length - 1]
-      );
+      await api.sendReaction(messageId, hasReacted ? null : updatedReactions[updatedReactions.length - 1]);
     } catch (err) {
       console.error("Error updating reaction:", err);
     }
@@ -1135,7 +1000,6 @@ setMessages(enrichedMessages);
     window.location.reload();
   };
 
-  // ── Hover Handlers ────────────────────────────────────────
   const handleMouseEnter = (messageId: string) => {
     clearTimeout(hoverTimeoutRef.current);
     setHoveredMessageId(messageId);
@@ -1146,12 +1010,10 @@ setMessages(enrichedMessages);
     hoverTimeoutRef.current = setTimeout(() => setHoveredMessageId(null), 200);
   };
 
-  // Trigger file input click
   const handleImageButtonClick = () => {
     fileInputRef.current?.click();
   };
 
-  // Handle file selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -1159,31 +1021,19 @@ setMessages(enrichedMessages);
     }
   };
 
-  // ── Join Screen ───────────────────────────────────────────
+  // ── Join Screen ─────────────────────────────────────────────────────
   if (!isJoined) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full">
           <div className="text-center mb-6 sm:mb-8">
-            <NextImage
-              src="/next.svg"
-              alt="Logo"
-              width={100}
-              height={25}
-              className="mx-auto dark:invert w-[80px] sm:w-[120px]"
-            />
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mt-4 sm:mt-6">
-              Join the Chat
-            </h2>
-            <p className="text-sm sm:text-base text-gray-600 mt-2">
-              Enter your username to start chatting
-            </p>
+            <NextImage src="/next.svg" alt="Logo" width={100} height={25} className="mx-auto dark:invert w-[80px] sm:w-[120px]" />
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mt-4 sm:mt-6">Join the Chat</h2>
+            <p className="text-sm sm:text-base text-gray-600 mt-2">Enter your username to start chatting</p>
           </div>
           <form onSubmit={joinChat} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Username
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
               <input
                 type="text"
                 value={username}
@@ -1195,10 +1045,7 @@ setMessages(enrichedMessages);
                 autoFocus
               />
             </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm sm:text-base"
-            >
+            <button type="submit" className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm sm:text-base">
               Join Chat
             </button>
           </form>
@@ -1207,42 +1054,26 @@ setMessages(enrichedMessages);
     );
   }
 
-  // ── Chat Screen ───────────────────────────────────────────
+  // ── Chat Screen ─────────────────────────────────────────────────────
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 overflow-hidden">
-      {/* Header */}
       <div className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="px-3 sm:px-4 py-2 sm:py-3 flex justify-between items-center w-full lg:max-w-[70%] lg:mx-auto">
           <div className="flex items-center gap-2 sm:gap-3">
             <NextImage src="/next.svg" alt="Logo" width={40} height={10} className="sm:w-[60px]" />
-            <h1 className="text-sm sm:text-lg font-semibold text-gray-800">
-              Chat
-            </h1>
+            <h1 className="text-sm sm:text-lg font-semibold text-gray-800">Chat</h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Hamburger Menu Button - Mobile Only */}
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
+            <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="lg:hidden p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors">
               <svg className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            
-            {/* Desktop User Info */}
             <div className="hidden sm:flex items-center gap-3">
               <span className="text-sm text-gray-600">Logged in as:</span>
               <span className="font-medium text-gray-800 truncate max-w-[150px]">{username}</span>
-              <button
-                onClick={clearSavedUser}
-                className="text-sm text-red-500 hover:text-red-600"
-              >
-                Leave
-              </button>
+              <button onClick={clearSavedUser} className="text-sm text-red-500 hover:text-red-600">Leave</button>
             </div>
-            
-            {/* Mobile User Info */}
             <div className="sm:hidden flex items-center gap-1">
               <span className="text-xs font-medium text-gray-800 truncate max-w-[100px]">{username}</span>
             </div>
@@ -1250,35 +1081,20 @@ setMessages(enrichedMessages);
         </div>
       </div>
 
-      {/* Chat Container */}
       <div className="flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden min-h-0">
         <div className="w-full lg:max-w-[70%] h-full min-h-0">
           <div className="bg-white rounded-lg sm:rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
             <div className="flex flex-row h-full min-h-0">
-              {/* Online Users Sidebar - Hidden on mobile by default */}
-              <div
-                className={`
-                  fixed lg:relative lg:block lg:w-64 w-64 bg-white border-r z-50
-                  transform transition-transform duration-300 ease-in-out
-                  h-full overflow-y-auto flex-shrink-0
-                  ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
-                  lg:translate-x-0
-                `}
-              >
+              <div className={`fixed lg:relative lg:block lg:w-64 w-64 bg-white border-r z-50 transform transition-transform duration-300 ease-in-out h-full overflow-y-auto flex-shrink-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
                 <div className="p-2 sm:p-3 border-b bg-gradient-to-r from-blue-500 to-indigo-600 sticky top-0">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <svg className="h-3 w-3 sm:h-4 sm:w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                       </svg>
-                      <h3 className="font-semibold text-white text-[10px] sm:text-sm">
-                        Active ({onlineUsers.length})
-                      </h3>
+                      <h3 className="font-semibold text-white text-[10px] sm:text-sm">Active ({onlineUsers.length})</h3>
                     </div>
-                    <button
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className="lg:hidden text-white hover:text-gray-200"
-                    >
+                    <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-white hover:text-gray-200">
                       <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
@@ -1290,34 +1106,20 @@ setMessages(enrichedMessages);
                     <p className="text-center text-gray-500 py-8 text-[10px] sm:text-sm">No active users</p>
                   ) : (
                     onlineUsers.map((user) => (
-                      <UserListItem
-                        key={user.id}
-                        user={user}
-                        isCurrentUser={user.id === userIdRef.current}
-                      />
+                      <UserListItem key={user.id} user={user} isCurrentUser={user.id === userIdRef.current} />
                     ))
                   )}
                 </div>
               </div>
 
-              {/* Overlay for mobile when sidebar is open */}
               {isMobileMenuOpen && (
-                <div
-                  className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                />
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
               )}
 
-              {/* Chat Area */}
               <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden">
-                {/* Load More Button */}
                 {showLoadMoreButton && hasMoreMessages && !isLoading && messages.length > 0 && (
                   <div className="sticky top-0 z-10 p-1 sm:p-2 flex justify-center bg-white/95 backdrop-blur-sm border-b flex-shrink-0">
-                    <button
-                      onClick={loadMoreMessages}
-                      disabled={isLoadingMore}
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-[10px] sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 shadow-md"
-                    >
+                    <button onClick={loadMoreMessages} disabled={isLoadingMore} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-[10px] sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 shadow-md">
                       {isLoadingMore ? (
                         <>
                           <svg className="animate-spin h-2 w-2 sm:h-4 sm:w-4" viewBox="0 0 24 24">
@@ -1334,23 +1136,14 @@ setMessages(enrichedMessages);
                           </svg>
                           <span className="hidden sm:inline">Load older messages</span>
                           <span className="sm:hidden">Load more</span>
-                          {totalMessages > messages.length && (
-                            <span className="text-[8px] sm:text-xs text-gray-500">
-                              ({totalMessages - messages.length})
-                            </span>
-                          )}
                         </>
                       )}
                     </button>
                   </div>
                 )}
                 
-                {/* New Message Button */}
                 {showScrollButton && newMessageCount === 0 && (
-                  <button
-                    onClick={scrollToBottom}
-                    className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full p-1 sm:p-2 shadow-lg hover:bg-blue-600 transition-colors z-10"
-                  >
+                  <button onClick={scrollToBottom} className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full p-1 sm:p-2 shadow-lg hover:bg-blue-600 transition-colors z-10">
                     <svg className="h-3 w-3 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                     </svg>
@@ -1358,10 +1151,7 @@ setMessages(enrichedMessages);
                 )}
                 
                 {newMessageCount > 0 && (
-                  <button
-                    onClick={scrollToBottom}
-                    className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full px-2 sm:px-4 py-1 sm:py-2 shadow-lg hover:bg-blue-600 transition-colors z-10 text-[10px] sm:text-sm flex items-center gap-1 sm:gap-2"
-                  >
+                  <button onClick={scrollToBottom} className="absolute bottom-16 sm:bottom-20 right-2 sm:right-4 bg-blue-500 text-white rounded-full px-2 sm:px-4 py-1 sm:py-2 shadow-lg hover:bg-blue-600 transition-colors z-10 text-[10px] sm:text-sm flex items-center gap-1 sm:gap-2">
                     <svg className="h-2 w-2 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                     </svg>
@@ -1369,21 +1159,9 @@ setMessages(enrichedMessages);
                   </button>
                 )}
                 
-                <div 
-                  ref={messagesContainerRef}
-                  onScroll={handleScroll}
-                  className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3 min-h-0"
-                >
-                  {isLoading && (
-                    <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">
-                      Loading messages...
-                    </p>
-                  )}
-                  {!isLoading && messages.length === 0 && (
-                    <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">
-                      No messages yet. Start the conversation!
-                    </p>
-                  )}
+                <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3 min-h-0">
+                  {isLoading && <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">Loading messages...</p>}
+                  {!isLoading && messages.length === 0 && <p className="text-center text-gray-500 mt-8 text-[10px] sm:text-sm">No messages yet. Start the conversation!</p>}
                   {messages.map((message) => (
                     <div key={message.id} id={`msg-${message.id}`}>
                       <MessageBubble
@@ -1399,18 +1177,10 @@ setMessages(enrichedMessages);
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input Area */}
                 <div className="border-t p-1.5 sm:p-3 flex-shrink-0 bg-white">
                   <form onSubmit={sendMessage} className="space-y-2">
                     <div className="flex gap-1 sm:gap-2">
-                      {/* Image Upload Button */}
-                      <button
-                        type="button"
-                        onClick={handleImageButtonClick}
-                        disabled={isUploading}
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Send image (max 2MB)"
-                      >
+                      <button type="button" onClick={handleImageButtonClick} disabled={isUploading} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" title="Send image (max 2MB)">
                         {isUploading ? (
                           <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -1422,36 +1192,11 @@ setMessages(enrichedMessages);
                           </svg>
                         )}
                       </button>
-                      
-                      {/* Hidden file input */}
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/gif,image/webp"
-                        onChange={handleFileSelect}
-                        className="hidden"
-                      />
-                      
-                      <input
-                        type="text"
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onFocus={updateUserActivity}
-                        onClick={updateUserActivity}
-                        placeholder="Type a message..."
-                        className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0"
-                        maxLength={500}
-                      />
-                      <button
-                        type="submit"
-                        className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0"
-                      >
-                        Send
-                      </button>
+                      <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={handleFileSelect} className="hidden" />
+                      <input type="text" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} onFocus={updateUserActivity} onClick={updateUserActivity} placeholder="Type a message..." className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[10px] sm:text-sm min-w-0" maxLength={500} />
+                      <button type="submit" className="bg-blue-500 text-white px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium text-[10px] sm:text-sm flex-shrink-0">Send</button>
                     </div>
-                    <div className="text-[8px] sm:text-xs text-gray-500 px-1">
-                      📷 Click the camera icon to share images (max 2MB, JPEG/PNG/GIF/WEBP)
-                    </div>
+                    <div className="text-[8px] sm:text-xs text-gray-500 px-1">📷 Click the camera icon to share images (max 2MB, JPEG/PNG/GIF/WEBP)</div>
                   </form>
                 </div>
               </div>
