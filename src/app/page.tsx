@@ -1005,108 +1005,103 @@ export default function Home() {
     e.target.value = "";
   };
 
-  const cancelImageUpload = useCallback(() => {
-    setPendingImage((prev) => {
-      if (prev) URL.revokeObjectURL(prev.preview);
-      return null;
-    });
-  }, []);
+    const cancelImageUpload = useCallback(() => {
+      setPendingImage((prev) => {
+        if (prev) URL.revokeObjectURL(prev.preview);
+        return null;
+      });
+    }, []);
 
   const sendImageMessage = useCallback(async () => {
-    if (!pendingImage || isSendingImage) return;
-    setIsSendingImage(true);
-    updateUserActivity();
-    await updateLastActive();
 
-    const messageId = generateId();
+  // Optimistic message with local blob preview (still valid since not revoked)
+  const optimisticMessage: Message = {
+    id: messageId,
+    imageUrl: pendingImage.preview,
+    type: "image",
+    text: captionToSend || undefined,
+    username,
+    timestamp: timestampToSend,
+    userId: userIdRef.current,
+    status: "sending",
+    reactions: [],
+  };
 
-    // Optimistic message with local blob preview
-    const optimisticMessage: Message = {
-      id: messageId,
-      imageUrl: pendingImage.preview,
-      type: "image",
-      text: pendingImage.caption || undefined,
+  setMessages((prev) =>
+    [...prev, optimisticMessage].sort((a, b) => a.timestamp - b.timestamp)
+  );
+
+  setIsUserScrolled(false);
+  setShowScrollButton(false);
+  setTimeout(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, 100);
+
+  try {
+    const response = await api.uploadImage(
+      fileToUpload,
+      captionToSend,
       username,
-      timestamp: Date.now(),
-      userId: userIdRef.current,
-      status: "sending",
-      reactions: [],
-    };
-
-    setMessages((prev) =>
-      [...prev, optimisticMessage].sort((a, b) => a.timestamp - b.timestamp)
+      userIdRef.current,
+      messageId
     );
 
-    // Clear pending immediately so UI feels snappy
-    cancelImageUpload();
-    setIsUserScrolled(false);
-    setShowScrollButton(false);
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
+    if (response.ok) {
+      const data = (await response.json()) as {
+        success: boolean;
+        messageId: string;
+        imageUrl: string;
+      };
 
-    try {
-      const response = await api.uploadImage(
-        pendingImage.file,
-        pendingImage.caption,
-        username,
-        userIdRef.current,
-        messageId
+      // ✅ Replace blob URL with CDN URL for sender
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, imageUrl: data.imageUrl, status: "delivered" }
+            : msg
+        )
       );
 
-      if (response.ok) {
-        const data = (await response.json()) as {
-          success: boolean;
-          messageId: string;
-          imageUrl: string;
-        };
+      // ✅ Now safe to revoke the blob URL
+      URL.revokeObjectURL(optimisticMessage.imageUrl!);
 
-        // Replace blob URL with real CDN URL
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId
-              ? { ...msg, imageUrl: data.imageUrl, status: "delivered" }
-              : msg
-          )
-        );
-
-        // Broadcast via Pusher so other users see it
-        await api.sendMessage({
-          id: messageId,
-          imageUrl: data.imageUrl,
-          type: "image",
-          text: optimisticMessage.text,
-          username,
-          timestamp: optimisticMessage.timestamp,
-          userId: userIdRef.current,
-          status: "delivered",
-          reactions: [],
-        });
-      } else {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId ? { ...msg, status: "error" } : msg
-          )
-        );
-      }
-    } catch (err) {
-      console.error("Error sending image:", err);
+      // Broadcast to other users with real CDN URL
+      await api.sendMessage({
+        id: messageId,
+        imageUrl: data.imageUrl,
+        type: "image",
+        text: captionToSend || undefined,
+        username,
+        timestamp: timestampToSend,
+        userId: userIdRef.current,
+        status: "delivered",
+        reactions: [],
+      });
+    } else {
+      // ✅ On error, keep blob URL visible so user sees their image with error status
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === messageId ? { ...msg, status: "error" } : msg
         )
       );
-    } finally {
-      setIsSendingImage(false);
     }
-  }, [
-    pendingImage,
-    isSendingImage,
-    username,
-    updateUserActivity,
-    updateLastActive,
-    cancelImageUpload,
-  ]);
+  } catch (err) {
+    console.error("Error sending image:", err);
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId ? { ...msg, status: "error" } : msg
+      )
+    );
+  } finally {
+    setIsSendingImage(false);
+  }
+}, [
+  pendingImage,
+  isSendingImage,
+  username,
+  updateUserActivity,
+  updateLastActive,
+]);
 
   // ── Pusher ────────────────────────────────────────────────
   useEffect(() => {
@@ -1119,15 +1114,31 @@ export default function Home() {
 
     channel.bind("new-message", (data: Message) => {
       setMessages((prev) => {
-        // Skip if we already have this message (own optimistic message)
-        if (prev.some((m) => m.id === data.id)) {
-          // But update the imageUrl if it changed (blob → CDN)
-          return prev.map((m) =>
-            m.id === data.id && data.imageUrl && m.imageUrl !== data.imageUrl
-              ? { ...m, imageUrl: data.imageUrl, status: "delivered" }
-              : m
-          );
+        const existingIndex = prev.findIndex((m) => m.id === data.id);
+    
+        if (existingIndex !== -1) {
+          // ✅ Always update imageUrl if the incoming one is a real URL (not blob)
+          const existing = prev[existingIndex];
+          const incomingIsRealUrl =
+            data.imageUrl && !data.imageUrl.startsWith("blob:");
+          const existingIsBlobUrl =
+            existing.imageUrl?.startsWith("blob:") || !existing.imageUrl;
+    
+          if (incomingIsRealUrl && existingIsBlobUrl) {
+            // Replace blob with CDN url
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...existing,
+              imageUrl: data.imageUrl,
+              status: "delivered",
+            };
+            return updated;
+          }
+          // Already have a real URL, skip
+          return prev;
         }
+    
+        // New message from another user
         const newMessages = [
           ...prev,
           {
@@ -1137,7 +1148,7 @@ export default function Home() {
             reactions: sanitizeReactions(data.reactions),
           },
         ].sort((a, b) => a.timestamp - b.timestamp);
-
+    
         if (isUserScrolled) {
           setNewMessageCount((c) => c + 1);
         }
