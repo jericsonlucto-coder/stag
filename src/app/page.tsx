@@ -709,7 +709,7 @@
   const newMessage: Message = {
     id: messageId,
     text: "",
-    imageBase64: "", // Changed from imageUrl to imageBase64
+    imageBase64: "",
     username,
     timestamp: Date.now(),
     userId: userIdRef.current,
@@ -735,7 +735,7 @@
       }),
     });
     
-    const result = await response.json();
+    const result: SendImageResponse = await response.json();
     
     if (response.ok && result.success && result.message) {
       // Success - update message with actual data
@@ -747,7 +747,7 @@
           const updatedMessage: Message = {
             id: messageId,
             text: result.message.text || "",
-            imageBase64: result.message.imageBase64, // Changed from imageUrl to imageBase64
+            imageBase64: result.message.imageBase64,
             username: result.message.username,
             timestamp: result.message.timestamp,
             userId: result.message.userId,
@@ -788,7 +788,7 @@
     setIsSendingImage(false);
   }
 };
-
+                
   // ── Effects ───────────────────────────────────────────────
   useEffect(() => {
     if (!isJoined) return;
